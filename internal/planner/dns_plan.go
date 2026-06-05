@@ -1,0 +1,112 @@
+package planner
+
+import "github.com/whitedns/wdns-wizard/pkg/types"
+
+func GenerateDNSPlan(domain, vpsIP string) types.DNSPlan {
+	return types.DNSPlan{Records: []types.DNSRecord{
+		{
+			Name:    "vpn." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: true,
+			TTL:     types.DefaultTTL,
+			Purpose: "vless_ws_tls",
+		},
+		{
+			Name:    "trojan." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: true,
+			TTL:     types.DefaultTTL,
+			Purpose: "vless_ws_tls_8443",
+		},
+		{
+			Name:    "panel." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "xui_panel_placeholder",
+		},
+		{
+			Name:    "direct." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "direct_fallback",
+		},
+		{
+			Name:    "hy2." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "hysteria2_direct_placeholder",
+		},
+		{
+			Name:    "reality." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "reality_xhttp_direct",
+		},
+		{
+			Name:    "ss." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "shadowsocks_direct",
+		},
+		{
+			Name:    "tor-vless-ws." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "tor_vless_ws_tls",
+		},
+		{
+			Name:    "tor-vless-ws-8443." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "tor_vless_ws_tls_8443",
+		},
+		{
+			Name:    "tor-hy2." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "tor_hysteria2_direct",
+		},
+		{
+			Name:    "tor-direct." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "tor_direct_vless_tcp_tls",
+		},
+		{
+			Name:    "tor-reality." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "tor_reality_xhttp_direct",
+		},
+		{
+			Name:    "tor-ss." + domain,
+			Type:    "A",
+			Content: vpsIP,
+			Proxied: false,
+			TTL:     types.DefaultTTL,
+			Purpose: "tor_shadowsocks_direct",
+		},
+	}}
+}

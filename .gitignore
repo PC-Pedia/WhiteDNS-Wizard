@@ -1,0 +1,16 @@
+.DS_Store
+
+# Local build/test output
+.cache/
+dist/
+build/
+coverage.out
+*.test
+*.log
+
+# Repo-root binaries
+/whitedns
+/wdns-wizard
+
+# Local provisioning output, if the app is pointed at the repo
+/.wdns-wizard/
