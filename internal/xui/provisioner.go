@@ -16,9 +16,10 @@ import (
 )
 
 type Provisioner struct {
-	RemoteFactory RemoteFactory
-	Issuer        acme.Issuer
-	APIClient     func(baseURL, basePath string) (*APIClient, error)
+	RemoteFactory       RemoteFactory
+	Issuer              acme.Issuer
+	APIClient           func(baseURL, basePath string) (*APIClient, error)
+	RealitySNIValidator RealitySNIValidator
 }
 
 func NewProvisioner() Provisioner {
@@ -71,7 +72,7 @@ func (r *progressRecorder) Body() string {
 }
 
 func (p Provisioner) Plan(ctx context.Context, input Input) (types.XUIPlan, error) {
-	project, bundle, remote, info, err := p.prepare(ctx, input)
+	project, bundle, remote, info, err := p.prepare(ctx, input, prepareOptions{})
 	if remote != nil {
 		_ = remote.Close()
 	}
@@ -97,7 +98,11 @@ func (p Provisioner) Plan(ctx context.Context, input Input) (types.XUIPlan, erro
 func (p Provisioner) Apply(ctx context.Context, input Input) (Result, error) {
 	progress := newProgressRecorder(input.Progress)
 	progress.Log("Preparing project and connecting to VPS over SSH.")
-	project, bundle, remote, info, err := p.prepare(ctx, input)
+	project, bundle, remote, info, err := p.prepare(ctx, input, prepareOptions{
+		ValidateRealitySNIs: true,
+		Progress:            progress,
+		RealitySNIValidator: p.RealitySNIValidator,
+	})
 	if err != nil {
 		return Result{}, err
 	}
@@ -244,7 +249,13 @@ func (p Provisioner) Apply(ctx context.Context, input Input) (Result, error) {
 	}, nil
 }
 
-func (p Provisioner) prepare(ctx context.Context, input Input) (projectData, ProtocolBundle, Remote, RemoteInfo, error) {
+type prepareOptions struct {
+	ValidateRealitySNIs bool
+	Progress            *progressRecorder
+	RealitySNIValidator RealitySNIValidator
+}
+
+func (p Provisioner) prepare(ctx context.Context, input Input, opts prepareOptions) (projectData, ProtocolBundle, Remote, RemoteInfo, error) {
 	input.SSH = normalizeSSH(input.SSH)
 	if err := validateSSHInput(input.SSH); err != nil {
 		return projectData{}, ProtocolBundle{}, nil, RemoteInfo{}, err
@@ -258,6 +269,13 @@ func (p Provisioner) prepare(ctx context.Context, input Input) (projectData, Pro
 	} else if changed {
 		if err := project.saveSecrets(); err != nil {
 			return projectData{}, ProtocolBundle{}, nil, RemoteInfo{}, err
+		}
+	}
+	if opts.ValidateRealitySNIs {
+		if changed := project.ensureValidatedRealitySNIs(ctx, opts.RealitySNIValidator, opts.Progress); changed {
+			if err := project.saveSecrets(); err != nil {
+				return projectData{}, ProtocolBundle{}, nil, RemoteInfo{}, err
+			}
 		}
 	}
 	bundle, err := BuildProtocolBundle(project.Domain, project.Secrets)

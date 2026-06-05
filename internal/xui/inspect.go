@@ -248,6 +248,7 @@ func (p Provisioner) Diagnostics(ctx context.Context, input Input) (DiagnosticsR
 		addCheck("local project", "PASS", info.Summary.ProjectDir)
 		addCheck("cloudflare zone", statusFor(info.CloudflareState.Zone.Status == "active"), fmt.Sprintf("%s (%s)", info.CloudflareState.Zone.Name, info.CloudflareState.Zone.Status))
 		addCheck("client links", statusFor(fileExists(info.ClientLinksPath)), info.ClientLinksPath)
+		addRealitySNISecretChecks(addCheck, project.Secrets)
 		addHy2DNSCheck(addCheck, project.Domain, info.Config.VPSIP)
 		addHy2CloudflareCheck(addCheck, info)
 		addShadowsocksDNSCheck(addCheck, project.Domain, info.Config.VPSIP)
@@ -329,6 +330,8 @@ func (p Provisioner) Diagnostics(ctx context.Context, input Input) (DiagnosticsR
 		addCheck("inbounds", "FAIL", err.Error())
 	} else {
 		addCheck("inbounds", "PASS", fmt.Sprintf("%d total inbounds", len(inbounds)))
+		links, _ := readYAMLFile[types.ClientLinks](project.Paths.ClientLinks)
+		addRealityConfigChecks(addCheck, inbounds, links, project.Secrets)
 		addHysteria2ConfigChecks(addCheck, inbounds)
 		addShadowsocksConfigChecks(addCheck, inbounds)
 	}
@@ -340,6 +343,9 @@ func (p Provisioner) RepairManaged(ctx context.Context, input Input) (RepairResu
 	if err != nil {
 		return RepairResult{}, err
 	}
+	progress := newProgressRecorder(input.Progress)
+	progress.SetPath(project.Paths.XUILog)
+	progress.Log("Preparing repair and validating saved Reality SNI values.")
 	if changed, err := project.ensureXUISecrets(input.Panel); err != nil {
 		return RepairResult{}, err
 	} else if changed {
@@ -350,6 +356,11 @@ func (p Provisioner) RepairManaged(ctx context.Context, input Input) (RepairResu
 	if changed, err := project.ensureGeneratedPanelCredentials(); err != nil {
 		return RepairResult{}, err
 	} else if changed {
+		if err := project.saveSecrets(); err != nil {
+			return RepairResult{}, err
+		}
+	}
+	if changed := project.ensureValidatedRealitySNIs(ctx, p.RealitySNIValidator, progress); changed {
 		if err := project.saveSecrets(); err != nil {
 			return RepairResult{}, err
 		}
@@ -372,8 +383,6 @@ func (p Provisioner) RepairManaged(ctx context.Context, input Input) (RepairResu
 	}
 	defer remote.Close()
 
-	progress := newProgressRecorder(input.Progress)
-	progress.SetPath(project.Paths.XUILog)
 	progress.Log("Repairing managed Docker 3x-ui stack without Cloudflare changes.")
 	if err := EnsureManagedDocker3XUI(ctx, remote, project.Secrets); err != nil {
 		return RepairResult{}, err
@@ -614,6 +623,7 @@ func (p Provisioner) SupportBundle(ctx context.Context, input Input) (SupportBun
 		{"docker-logs-3xui-app.txt", "docker logs --tail 160 3xui_app 2>&1 || true"},
 		{"docker-logs-3xui-postgres.txt", "docker logs --tail 120 3xui_postgres 2>&1 || true"},
 		{"docker-logs-3xui-tor.txt", "docker logs --tail 120 3xui_tor 2>&1 || true"},
+		{"xray-reality-config.txt", `docker exec 3xui_app sh -lc 'grep -n -A80 -B10 "wdns-reality-xhttp\|wdns-tor-reality-xhttp" /app/bin/config.json 2>/dev/null || grep -n -A80 -B10 "wdns-reality-xhttp\|wdns-tor-reality-xhttp" bin/config.json 2>/dev/null || true'`},
 		{"firewall.txt", "sh -lc 'if command -v ufw >/dev/null 2>&1; then ufw status verbose; elif command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --state && firewall-cmd --list-all; else echo no ufw/firewalld detected; fi'"},
 		{"ports.txt", "sh -lc 'if command -v ss >/dev/null 2>&1; then ss -lntup; else netstat -tulpen 2>/dev/null || true; fi'"},
 	} {
@@ -1051,6 +1061,86 @@ func addTorXrayConfigChecks(add func(string, string, string), config map[string]
 	} else {
 		add("tor routing", "FAIL", "missing inboundTag routes: "+strings.Join(missing, ", "))
 	}
+}
+
+func addRealitySNISecretChecks(add func(string, string, string), values map[string]string) {
+	for _, item := range []struct {
+		name string
+		key  string
+	}{
+		{name: "reality sni", key: "reality_sni"},
+		{name: "tor reality sni", key: "tor_reality_sni"},
+	} {
+		sni := strings.TrimSpace(values[item.key])
+		if sni == "" {
+			add(item.name, "WARN", item.key+" is empty; apply will select a validated fallback")
+			continue
+		}
+		add(item.name, "PASS", "selected "+sni)
+	}
+}
+
+func addRealityConfigChecks(add func(string, string, string), inbounds []Inbound, links types.ClientLinks, values map[string]string) {
+	for _, item := range []struct {
+		name   string
+		tag    string
+		sniKey string
+	}{
+		{name: "reality config", tag: "wdns-reality-xhttp", sniKey: "reality_sni"},
+		{name: "tor reality config", tag: "wdns-tor-reality-xhttp", sniKey: "tor_reality_sni"},
+	} {
+		expected := strings.TrimSpace(values[item.sniKey])
+		if expected == "" {
+			add(item.name, "WARN", item.sniKey+" is empty")
+			continue
+		}
+		inbound, ok := findInboundByTag(inbounds, item.tag)
+		if !ok {
+			add(item.name, "FAIL", "managed inbound not found")
+			continue
+		}
+		settings, _ := normalizedMap(inbound.StreamSettings["realitySettings"])
+		target := strings.TrimSpace(fmt.Sprint(settings["target"]))
+		serverNames := stringList(settings["serverNames"])
+		if target == expected+":443" && stringSliceContains(serverNames, expected) {
+			add(item.name, "PASS", "target and serverNames match "+expected)
+		} else {
+			add(item.name, "WARN", fmt.Sprintf("expected target %s:443 and serverNames [%s], got target %s and serverNames %v", expected, expected, target, serverNames))
+		}
+		if realityClientLinkMatches(links, item.tag, expected) {
+			add(item.name+" link", "PASS", "client link uses sni="+expected)
+		} else {
+			add(item.name+" link", "WARN", "client link is missing or does not use sni="+expected)
+		}
+	}
+}
+
+func findInboundByTag(inbounds []Inbound, tag string) (Inbound, bool) {
+	for _, inbound := range inbounds {
+		if inbound.Tag == tag {
+			return inbound, true
+		}
+	}
+	return Inbound{}, false
+}
+
+func normalizedMap(value any) (map[string]any, bool) {
+	data, _ := json.Marshal(value)
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil, false
+	}
+	return parsed, true
+}
+
+func realityClientLinkMatches(links types.ClientLinks, tag, expectedSNI string) bool {
+	remark := DisplayNameForTag(tag)
+	for _, client := range links.Clients {
+		if client.Name == remark && strings.Contains(client.Link, "sni="+expectedSNI) {
+			return true
+		}
+	}
+	return false
 }
 
 func addHysteria2ConfigChecks(add func(string, string, string), inbounds []Inbound) {

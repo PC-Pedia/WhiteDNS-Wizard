@@ -127,6 +127,10 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 	if !containsString(RealitySNICandidates(), generated.TorRealitySNI) {
 		t.Fatalf("unexpected tor reality SNI: %s", generated.TorRealitySNI)
 	}
+	if !containsString([]string{"apple.com", "docker.com"}, generated.RealitySNI) ||
+		!containsString([]string{"apple.com", "docker.com"}, generated.TorRealitySNI) {
+		t.Fatalf("Reality SNI should be apple.com or docker.com, got reality=%s tor=%s", generated.RealitySNI, generated.TorRealitySNI)
+	}
 	values := PlaintextMap("token", generated, "origin-key")
 	for _, key := range []string{
 		"vless_8443_uuid",

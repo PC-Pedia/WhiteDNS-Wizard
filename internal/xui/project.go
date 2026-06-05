@@ -1,6 +1,7 @@
 package xui
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -152,6 +153,43 @@ func (p projectData) ensureGeneratedPanelCredentials() (bool, error) {
 		p.Secrets["panel_base_path"] = generated.PanelBasePath
 	}
 	return true, nil
+}
+
+func (p projectData) ensureValidatedRealitySNIs(ctx context.Context, validator RealitySNIValidator, progress *progressRecorder) bool {
+	selector := defaultRealitySNISelector(validator)
+	changed := false
+	for _, key := range []string{"reality_sni", "tor_reality_sni"} {
+		selection := selector.Select(ctx, key, p.Secrets[key])
+		if selection.Changed {
+			p.Secrets[key] = selection.New
+			changed = true
+		}
+		logRealitySNISelection(progress, selection)
+	}
+	return changed
+}
+
+func logRealitySNISelection(progress *progressRecorder, selection realitySNISelection) {
+	if progress == nil {
+		return
+	}
+	if selection.Changed {
+		old := strings.TrimSpace(selection.Old)
+		if old == "" {
+			old = "<empty>"
+		}
+		source := "validated candidate"
+		if selection.Fallback {
+			source = "fallback"
+		}
+		progress.Logf("Reality SNI validation: %s rotated from %s to %s using %s (%s).", selection.Key, old, selection.New, source, selection.Reason)
+		return
+	}
+	if selection.Fallback {
+		progress.Logf("Reality SNI validation: %s kept fallback %s; no validated replacement was available (%s).", selection.Key, selection.New, selection.Reason)
+		return
+	}
+	progress.Logf("Reality SNI validation: %s %s PASS.", selection.Key, selection.New)
 }
 
 func (p projectData) publicCertFresh(hostnames []string) bool {

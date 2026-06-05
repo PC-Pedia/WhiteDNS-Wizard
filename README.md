@@ -116,7 +116,7 @@ WhiteDNS creates import strings for:
 | `Reality XHTTP Tor @whiteDNS` | `tor-reality.<domain>` | `2101/tcp` | XHTTP Reality | Server-side Tor exit |
 | `Shadowsocks Tor @whiteDNS` | `tor-ss.<domain>` | `8390/tcp,udp` | Shadowsocks 2022 | Server-side Tor exit |
 
-Reality profiles use a random saved SNI from a built-in allowlist of common Iranian, telecom, government, education, update, and technology domains. Normal TLS profiles keep their own hostnames as SNI so public certificate validation continues to work.
+Reality profiles currently use either `apple.com` or `docker.com` as the saved SNI and Reality target. Normal TLS profiles keep their own hostnames as SNI so public certificate validation continues to work.
 
 Tor profiles mean:
 

@@ -19,7 +19,7 @@ func testProtocolValues() map[string]string {
 		"reality_mldsa65_seed":            "reality-seed",
 		"reality_mlkem_decryption":        "mlkem768x25519plus.native.600s.decrypt",
 		"reality_mlkem_encryption":        "mlkem768x25519plus.native.0rtt.encrypt",
-		"reality_sni":                     "digikala.com",
+		"reality_sni":                     "apple.com",
 		"trojan_password":                 "trojan-secret",
 		"hysteria2_password":              "hy-secret",
 		"hysteria2_obfs_password":         "hy-obfs-secret",
@@ -35,7 +35,7 @@ func testProtocolValues() map[string]string {
 		"tor_reality_mldsa65_seed":        "tor-reality-seed",
 		"tor_reality_mlkem_decryption":    "mlkem768x25519plus.native.600s.tor-decrypt",
 		"tor_reality_mlkem_encryption":    "mlkem768x25519plus.native.0rtt.tor-encrypt",
-		"tor_reality_sni":                 "www.microsoft.com",
+		"tor_reality_sni":                 "apple.com",
 		"tor_hysteria2_password":          "tor-hy-secret",
 		"tor_hysteria2_obfs_password":     "tor-hy-obfs-secret",
 		"tor_shadowsocks_server_password": "tor-ss-server-secret",
@@ -75,7 +75,7 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	assertContains(t, realityLink, "?type=xhttp&security=reality&encryption=none")
 	assertContains(t, realityLink, "pbk=reality-public")
 	assertContains(t, realityLink, "sid=a1b2c3d4")
-	assertContains(t, realityLink, "sni=digikala.com")
+	assertContains(t, realityLink, "sni=apple.com")
 	assertContains(t, realityLink, "#Reality%20XHTTP%20")
 	shadowsocksLink := bundle.Links.Clients[5].Link
 	assertContains(t, shadowsocksLink, "ss://")
@@ -104,7 +104,7 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	torRealityLink := bundle.Links.Clients[10].Link
 	assertContains(t, torRealityLink, "vless://88888888-8888-8888-8888-888888888888@tor-reality.example.com:2101")
 	assertContains(t, torRealityLink, "pbk=tor-reality-public")
-	assertContains(t, torRealityLink, "sni=www.microsoft.com")
+	assertContains(t, torRealityLink, "sni=apple.com")
 	assertContains(t, torRealityLink, "#Reality%20XHTTP%20Tor%20")
 	torShadowsocksLink := bundle.Links.Clients[11].Link
 	assertContains(t, torShadowsocksLink, "@tor-ss.example.com:8390?type=tcp#Shadowsocks%20Tor%20")
@@ -183,10 +183,10 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 		t.Fatalf("unexpected reality stream settings: %+v", stream)
 	}
 	realitySettings, _ := stream["realitySettings"].(map[string]any)
-	if realitySettings["target"] != "digikala.com:443" || realitySettings["privateKey"] != "reality-private" {
+	if realitySettings["target"] != "apple.com:443" || realitySettings["privateKey"] != "reality-private" {
 		t.Fatalf("unexpected reality settings: %+v", realitySettings)
 	}
-	if got := fmt.Sprint(realitySettings["serverNames"]); got != "[digikala.com]" {
+	if got := fmt.Sprint(realitySettings["serverNames"]); got != "[apple.com]" {
 		t.Fatalf("unexpected reality serverNames: %+v", realitySettings)
 	}
 	xhttpSettings, _ := stream["xhttpSettings"].(map[string]any)
@@ -250,7 +250,7 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	if torRealitySettings["privateKey"] != "tor-reality-private" {
 		t.Fatalf("unexpected tor reality settings: %+v", torRealitySettings)
 	}
-	if torRealitySettings["target"] != "www.microsoft.com:443" {
+	if torRealitySettings["target"] != "apple.com:443" {
 		t.Fatalf("unexpected tor reality target: %+v", torRealitySettings)
 	}
 
