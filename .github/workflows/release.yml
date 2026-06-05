@@ -1,12 +1,15 @@
 name: Release builds
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
-    types: [published]
+    types: [published, edited]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version label for manual builds"
+        description: "Version label or release tag for manual builds"
         required: false
         default: "dev"
 
@@ -45,8 +48,17 @@ jobs:
           path: dist/*
 
       - name: Upload assets to GitHub Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG_NAME" dist/* --clobber
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.version || github.ref_name }}
+        run: |
+          if [ "$TAG_NAME" = "dev" ] || [ -z "$TAG_NAME" ]; then
+            echo "No release tag supplied; skipping GitHub Release upload."
+            exit 0
+          fi
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG_NAME does not exist yet; build artifacts are available from this workflow run."
+            exit 0
+          fi
+          gh release upload "$TAG_NAME" dist/* --clobber
