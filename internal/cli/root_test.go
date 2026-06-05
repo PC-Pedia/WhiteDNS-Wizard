@@ -76,6 +76,29 @@ func TestRootHelpUsesWhiteDNSCommandName(t *testing.T) {
 	}
 }
 
+func TestRootVersionIncludesBuildMetadata(t *testing.T) {
+	oldVersion, oldCommit, oldDate := version, commit, date
+	defer func() {
+		version, commit, date = oldVersion, oldCommit, oldDate
+	}()
+	version = "v9.9.9"
+	commit = "abc123"
+	date = "2026-06-05T00:00:00Z"
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	want := "whitedns v9.9.9 commit=abc123 built=2026-06-05T00:00:00Z"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("version output = %q, want %q", out.String(), want)
+	}
+}
+
 func TestPlanShow(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "example.com", "plans")

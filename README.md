@@ -296,6 +296,36 @@ env GOCACHE="$PWD/.cache/go-build" go test ./...
 go build -o whitedns ./cmd/whitedns
 ```
 
+### Release builds
+
+GitHub Release builds are handled by:
+
+```text
+.github/workflows/release.yml
+scripts/build-release.sh
+scripts/release-targets.txt
+```
+
+When a GitHub release is published, the workflow runs tests, builds archives for every target in `scripts/release-targets.txt`, writes SHA-256 checksums, stores the files as a workflow artifact, and uploads the same files to the GitHub release.
+
+Run the release builder locally with:
+
+```bash
+VERSION=v0.1.0 ./scripts/build-release.sh
+```
+
+Artifacts are written to:
+
+```text
+dist/
+```
+
+The default targets include Linux, macOS, Windows, FreeBSD, OpenBSD, NetBSD, and Termux-compatible Android ARM64. The Termux build uses Go's `android` target and is named like:
+
+```text
+whitedns_<version>_termux-android-arm64.tar.gz
+```
+
 ### Format
 
 ```bash

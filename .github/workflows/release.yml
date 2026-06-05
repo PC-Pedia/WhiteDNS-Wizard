@@ -1,0 +1,52 @@
+name: Release builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label for manual builds"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Test and build release assets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build archives
+        env:
+          VERSION: ${{ github.event.release.tag_name || inputs.version || github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          DIST_DIR: dist
+        run: ./scripts/build-release.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whitedns-release-assets
+          path: dist/*
+
+      - name: Upload assets to GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG_NAME" dist/* --clobber

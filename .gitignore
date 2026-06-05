@@ -3,6 +3,7 @@
 # Local build/test output
 .cache/
 dist/
+dist-test/
 build/
 coverage.out
 *.test

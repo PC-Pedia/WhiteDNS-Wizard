@@ -21,17 +21,25 @@ import (
 
 var runTUI = tui.Run
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func NewRootCommand() *cobra.Command {
 	var root string
 	var accountID string
 	cmd := &cobra.Command{
-		Use:   "whitedns",
-		Short: "Cloudflare-first VPN provisioning wizard",
-		Args:  cobra.NoArgs,
+		Use:     "whitedns",
+		Short:   "Cloudflare-first VPN provisioning wizard",
+		Version: buildVersion(),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInteractiveWizard(root, accountID)
 		},
 	}
+	cmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	cmd.PersistentFlags().StringVar(&root, "root", "", "project output root")
 	cmd.PersistentFlags().StringVar(&accountID, "account-id", app.ResolveAccountID(""), "Cloudflare account ID for account-token verification")
 
@@ -40,6 +48,10 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(newPlanCommand(&root))
 	cmd.AddCommand(newXUICommand(&root))
 	return cmd
+}
+
+func buildVersion() string {
+	return fmt.Sprintf("%s commit=%s built=%s", version, commit, date)
 }
 
 func newInitCommand(root, accountID *string) *cobra.Command {
