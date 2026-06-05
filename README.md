@@ -45,14 +45,47 @@ The wizard will ask for:
 
 ### 3. Cloudflare token permissions
 
-Use a Cloudflare API token with access to the target zone:
+Create an Account API token in Cloudflare:
+
+1. Go to `Manage Account > Account API Tokens > Create Token`.
+2. Choose the `Edit zone DNS` template.
+
+![Choose the Edit zone DNS token template](assets/tutorial/cloudflare-edit-zone-dns-template.png)
+
+3. Scope it to the target domain when possible. Use all domains only when needed.
+4. Keep `DNS: Read + Edit`.
+5. In `DNS & Zones`, add `Zone: Read` and `Zone Settings: Edit`.
+
+![Cloudflare DNS and Zone permissions](assets/tutorial/cloudflare-dns-zone-permissions.png)
+
+6. In `Cache & Performance`, add `Zone SSL & Certificates: Edit`.
+
+![Cloudflare SSL and Certificates permission](assets/tutorial/cloudflare-ssl-certificates-permission.png)
+
+The final required permissions are:
 
 ```text
-Zone / Zone / Read
-Zone / DNS / Edit or Write
-Zone / Zone Settings / Edit or Write
-Zone / SSL and Certificates / Edit or Write
+DNS & Zones / DNS: Read + Edit
+DNS & Zones / Zone: Read
+DNS & Zones / Zone Settings: Edit
+Cache & Performance / Zone SSL & Certificates: Edit
 ```
+
+Cloudflare API docs may call `Edit` permissions `Write`. WhiteDNS uses the account ID you enter for:
+
+```text
+GET /client/v4/accounts/<account-id>/tokens/verify
+```
+
+Troubleshooting:
+
+| Error area | Usually means |
+| --- | --- |
+| Token validation | Wrong token, wrong account ID, expired/disabled token, or incompatible token type. |
+| Zone lookup | Missing `Zone: Read` or token is not scoped to the selected domain. |
+| DNS or ACME DNS-01 | Missing `DNS: Edit`. |
+| SSL mode strict | Missing `Zone Settings: Edit`. |
+| Origin CA certificate | Missing `Zone SSL & Certificates: Edit`. |
 
 ### 4. What the init flow does
 

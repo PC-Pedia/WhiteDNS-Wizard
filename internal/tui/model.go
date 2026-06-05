@@ -524,18 +524,26 @@ func (m model) View() string {
 		body = titleStyle.Render("Cloudflare account ID") + "\n\n" +
 			m.accountInput.View() + "\n\n" +
 			m.inlineError() +
+			"Enter your own Cloudflare account ID. This is not hard-coded.\n" +
+			"WhiteDNS uses it for:\n" +
+			"GET /client/v4/accounts/<account-id>/tokens/verify\n\n" +
 			hintStyle.Render("This is saved after token verification. Press Enter to continue.")
 	case stepToken:
 		body = titleStyle.Render("Cloudflare API token") + "\n\n" +
 			m.tokenInput.View() + "\n\n" +
 			m.inlineError() +
+			"Create the token in Cloudflare:\n" +
+			"1. Manage Account > Account API Tokens > Create Token\n" +
+			"2. Choose the Edit zone DNS template\n" +
+			"3. Scope it to the target domain when possible\n" +
+			"4. Keep DNS: Read + Edit\n" +
+			"5. Add:\n" +
+			"   - DNS & Zones / Zone: Read\n" +
+			"   - DNS & Zones / Zone Settings: Edit\n" +
+			"   - Cache & Performance / Zone SSL & Certificates: Edit\n\n" +
 			"Token validation endpoint:\n" +
 			"GET /client/v4/accounts/" + strings.TrimSpace(m.accountInput.Value()) + "/tokens/verify\n\n" +
-			"Required token permissions:\n" +
-			"- Zone / DNS / Edit or Write\n" +
-			"- Zone / Zone / Read\n" +
-			"- Zone / Zone Settings / Edit or Write\n" +
-			"- Zone / SSL and Certificates / Edit or Write\n\n" +
+			"Cloudflare API docs may call Edit permissions Write.\n\n" +
 			hintStyle.Render("Press Enter to continue.")
 	case stepTokenChecking:
 		body = titleStyle.Render("Validating token") + "\n\n" +

@@ -245,6 +245,46 @@ func TestAccountIDAdvancesToTokenStep(t *testing.T) {
 	}
 }
 
+func TestCloudflareAccountHelpExplainsVerificationEndpoint(t *testing.T) {
+	m := newModel(app.Provisioner{Root: t.TempDir()})
+	m.step = stepAccount
+	view := m.View()
+
+	for _, want := range []string{
+		"not hard-coded",
+		"GET /client/v4/accounts/<account-id>/tokens/verify",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("account help missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestCloudflareTokenHelpShowsTemplateAndExtraPermissions(t *testing.T) {
+	m := newModel(app.Provisioner{Root: t.TempDir()})
+	m.step = stepToken
+	m.accountInput.SetValue("account-id")
+	view := m.View()
+
+	for _, want := range []string{
+		"Manage Account > Account API Tokens > Create Token",
+		"Edit zone DNS template",
+		"DNS: Read + Edit",
+		"DNS & Zones / Zone: Read",
+		"DNS & Zones / Zone Settings: Edit",
+		"Cache & Performance / Zone SSL & Certificates: Edit",
+		"GET /client/v4/accounts/account-id/tokens/verify",
+		"Cloudflare API docs may call Edit permissions Write",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("token help missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Edit or Write") {
+		t.Fatalf("token help should not use old ambiguous wording:\n%s", view)
+	}
+}
+
 func TestSavedCredentialsPrefillInputs(t *testing.T) {
 	root := t.TempDir()
 	if err := credentials.Save(root, credentials.CloudflareCredentials{
