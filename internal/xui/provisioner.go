@@ -124,6 +124,7 @@ func (p Provisioner) Apply(ctx context.Context, input Input) (Result, error) {
 				return Result{}, err
 			}
 		}
+		progress.Logf("Preparing remote managed directory %s and compose file %s.", RemoteBaseDir, RemoteComposePath)
 		if err := InstallDocker3XUI(ctx, remote, project.Secrets); err != nil {
 			return Result{}, err
 		}
@@ -140,6 +141,7 @@ func (p Provisioner) Apply(ctx context.Context, input Input) (Result, error) {
 				return Result{}, err
 			}
 		}
+		progress.Logf("Preparing remote managed directory %s and compose file %s.", RemoteBaseDir, RemoteComposePath)
 		if err := EnsureManagedDocker3XUI(ctx, remote, project.Secrets); err != nil {
 			return Result{}, err
 		}

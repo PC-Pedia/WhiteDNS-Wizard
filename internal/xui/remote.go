@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -219,8 +220,7 @@ func (r *SSHRemote) Upload(ctx context.Context, path string, data []byte, perm o
 	session.Stdin = bytes.NewReader(data)
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
-	cmd := fmt.Sprintf("mkdir -p %s && cat > %s && chmod %04o %s && mv %s %s",
-		shQuote(filepath.Dir(path)), shQuote(tmp), perm.Perm(), shQuote(tmp), shQuote(tmp), shQuote(path))
+	cmd := remoteUploadCommand(path, tmp, perm)
 	done := make(chan error, 1)
 	go func() {
 		done <- session.Run(cmd)
@@ -239,6 +239,37 @@ func (r *SSHRemote) Upload(ctx context.Context, path string, data []byte, perm o
 		}
 		return nil
 	}
+}
+
+func remoteUploadCommand(remotePath, tmpPath string, perm os.FileMode) string {
+	return "sh -lc " + shQuote(remoteUploadScript(remotePath, tmpPath, perm))
+}
+
+func remoteUploadScript(remotePath, tmpPath string, perm os.FileMode) string {
+	parent := posixpath.Dir(remotePath)
+	return "set -u\n" +
+		"parent=" + shQuote(parent) + "\n" +
+		"tmp=" + shQuote(tmpPath) + "\n" +
+		"target=" + shQuote(remotePath) + "\n" +
+		"if ! mkdir -p \"$parent\"; then\n" +
+		"  echo \"remote upload parent is not writable: $parent\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"if [ ! -d \"$parent\" ]; then\n" +
+		"  echo \"remote upload parent does not exist: $parent\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"if [ ! -w \"$parent\" ]; then\n" +
+		"  echo \"remote upload parent is not writable: $parent\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"if ! cat > \"$tmp\"; then\n" +
+		"  echo \"remote upload temp write failed: $tmp\" >&2\n" +
+		"  rm -f \"$tmp\"\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		fmt.Sprintf("chmod %04o \"$tmp\"\n", perm.Perm()) +
+		"mv -f \"$tmp\" \"$target\""
 }
 
 func (r *SSHRemote) Tunnel(ctx context.Context, remoteHost string, remotePort int) (Tunnel, error) {

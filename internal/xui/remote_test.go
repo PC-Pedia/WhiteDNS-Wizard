@@ -11,6 +11,34 @@ import (
 	"testing"
 )
 
+func TestRemoteUploadCommandUsesPOSIXParentAndClearErrors(t *testing.T) {
+	script := remoteUploadScript("/opt/wdns-wizard/3x-ui/docker-compose.yml", "/opt/wdns-wizard/3x-ui/docker-compose.yml.tmp", 0o644)
+
+	for _, want := range []string{
+		"parent='/opt/wdns-wizard/3x-ui'",
+		"tmp='/opt/wdns-wizard/3x-ui/docker-compose.yml.tmp'",
+		"target='/opt/wdns-wizard/3x-ui/docker-compose.yml'",
+		"mkdir -p \"$parent\"",
+		"remote upload parent is not writable: $parent",
+		"remote upload parent does not exist: $parent",
+		"remote upload temp write failed: $tmp",
+		"chmod 0644 \"$tmp\"",
+		"mv -f \"$tmp\" \"$target\"",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("upload script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, `\opt\wdns-wizard`) {
+		t.Fatalf("upload script should use POSIX remote paths:\n%s", script)
+	}
+
+	cmd := remoteUploadCommand("/opt/wdns-wizard/3x-ui/docker-compose.yml", "/opt/wdns-wizard/3x-ui/docker-compose.yml.tmp", 0o644)
+	if !strings.HasPrefix(cmd, "sh -lc ") {
+		t.Fatalf("upload command should run through sh -lc:\n%s", cmd)
+	}
+}
+
 func TestSignerFromFileWithEncryptedKeyPassphrase(t *testing.T) {
 	keyPath := writeTestPrivateKey(t, true, "secret-passphrase")
 

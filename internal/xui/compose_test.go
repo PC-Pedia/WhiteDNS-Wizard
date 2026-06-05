@@ -11,6 +11,7 @@ import (
 
 type fakeRemote struct {
 	commands []string
+	events   []string
 	uploads  map[string][]byte
 	results  map[string]error
 	outputs  map[string]string
@@ -19,6 +20,7 @@ type fakeRemote struct {
 
 func (r *fakeRemote) Run(ctx context.Context, command string) (string, error) {
 	r.commands = append(r.commands, command)
+	r.events = append(r.events, "run:"+command)
 	for pattern, err := range r.failOnce {
 		if strings.Contains(command, pattern) {
 			delete(r.failOnce, pattern)
@@ -42,6 +44,7 @@ func (r *fakeRemote) Upload(ctx context.Context, path string, data []byte, perm 
 	if r.uploads == nil {
 		r.uploads = map[string][]byte{}
 	}
+	r.events = append(r.events, "upload:"+path)
 	r.uploads[path] = data
 	return nil
 }
@@ -81,6 +84,37 @@ func TestProgressRecorderWritesLogFile(t *testing.T) {
 	body := string(data)
 	assertContains(t, body, "Preparing project.")
 	assertContains(t, body, "Applying firewall rules.")
+}
+
+func TestPrepareManagedDocker3XUICreatesWritableBaseAndTorDirs(t *testing.T) {
+	remote := &fakeRemote{}
+	if err := PrepareManagedDocker3XUI(context.Background(), remote); err != nil {
+		t.Fatalf("PrepareManagedDocker3XUI returned error: %v", err)
+	}
+	if len(remote.commands) != 1 {
+		t.Fatalf("commands = %+v, want one prepare command", remote.commands)
+	}
+	assertContains(t, remote.commands[0], "sh -lc ")
+	script := prepareManagedDocker3XUIScript()
+	assertContains(t, script, "base='/opt/wdns-wizard/3x-ui'")
+	assertContains(t, script, "tor_dir='/opt/wdns-wizard/3x-ui/tor'")
+	assertContains(t, script, "mkdir -p \"$base\" \"$tor_dir\"")
+	assertContains(t, script, "remote managed directory is not writable: $base")
+	assertContains(t, script, "remote managed tor directory is not writable: $tor_dir")
+}
+
+func TestPrepareManagedDocker3XUIReturnsClearWritableError(t *testing.T) {
+	remote := &fakeRemote{
+		failOnce: map[string]error{
+			"mkdir -p \"$base\" \"$tor_dir\"": fmt.Errorf("remote command failed: remote managed directory is not writable: /opt/wdns-wizard/3x-ui"),
+		},
+	}
+	err := PrepareManagedDocker3XUI(context.Background(), remote)
+	if err == nil {
+		t.Fatal("expected prepare error")
+	}
+	assertContains(t, err.Error(), "prepare managed 3x-ui remote directory")
+	assertContains(t, err.Error(), "remote managed directory is not writable: /opt/wdns-wizard/3x-ui")
 }
 
 func TestInstallDocker3XUIInstallsComposePluginWhenMissing(t *testing.T) {
@@ -137,6 +171,16 @@ func TestEnsureManagedDocker3XUIUsesProfileSafeCommands(t *testing.T) {
 	}
 	if len(remote.uploads[RemoteTorrcPath]) == 0 {
 		t.Fatal("expected torrc upload")
+	}
+	prepare := indexComposeTestEventContaining(remote.events, "mkdir -p \"$base\" \"$tor_dir\"")
+	composeUpload := indexComposeTestEventContaining(remote.events, "upload:"+RemoteComposePath)
+	torDockerfileUpload := indexComposeTestEventContaining(remote.events, "upload:"+RemoteTorDockerfilePath)
+	torrcUpload := indexComposeTestEventContaining(remote.events, "upload:"+RemoteTorrcPath)
+	if prepare == -1 || composeUpload == -1 || torDockerfileUpload == -1 || torrcUpload == -1 {
+		t.Fatalf("expected prepare and upload events:\n%s", strings.Join(remote.events, "\n"))
+	}
+	if !(prepare < composeUpload && prepare < torDockerfileUpload && prepare < torrcUpload) {
+		t.Fatalf("managed remote directory should be prepared before uploads:\n%s", strings.Join(remote.events, "\n"))
 	}
 	joined := strings.Join(remote.commands, "\n")
 	postgresStart := indexComposeTestCommandContaining(remote.commands, "docker compose --profile postgres up -d postgres")
@@ -244,6 +288,15 @@ func TestEnsureManagedDocker3XUIRetriesTransientConfigureFailure(t *testing.T) {
 func indexComposeTestCommandContaining(commands []string, want string) int {
 	for i, command := range commands {
 		if strings.Contains(command, want) {
+			return i
+		}
+	}
+	return -1
+}
+
+func indexComposeTestEventContaining(events []string, want string) int {
+	for i, event := range events {
+		if strings.Contains(event, want) {
 			return i
 		}
 	}

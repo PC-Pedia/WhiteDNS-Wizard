@@ -224,6 +224,9 @@ docker compose version >/dev/null 2>&1`
 }
 
 func EnsureManagedDocker3XUI(ctx context.Context, remote Remote, values map[string]string) error {
+	if err := PrepareManagedDocker3XUI(ctx, remote); err != nil {
+		return err
+	}
 	compose := RenderCompose(values["postgres_password"])
 	if err := remote.Upload(ctx, RemoteComposePath, []byte(compose), 0o644); err != nil {
 		return err
@@ -259,6 +262,31 @@ func EnsureManagedDocker3XUI(ctx context.Context, remote Remote, values map[stri
 		return err
 	}
 	return nil
+}
+
+func PrepareManagedDocker3XUI(ctx context.Context, remote Remote) error {
+	if _, err := remote.Run(ctx, "sh -lc "+shQuote(prepareManagedDocker3XUIScript())); err != nil {
+		return fmt.Errorf("prepare managed 3x-ui remote directory: %w", err)
+	}
+	return nil
+}
+
+func prepareManagedDocker3XUIScript() string {
+	return "set -u\n" +
+		"base=" + shQuote(RemoteBaseDir) + "\n" +
+		"tor_dir=" + shQuote(RemoteBaseDir+"/tor") + "\n" +
+		"if ! mkdir -p \"$base\" \"$tor_dir\"; then\n" +
+		"  echo \"remote managed directory is not writable: $base\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"if [ ! -w \"$base\" ]; then\n" +
+		"  echo \"remote managed directory is not writable: $base\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"if [ ! -w \"$tor_dir\" ]; then\n" +
+		"  echo \"remote managed tor directory is not writable: $tor_dir\" >&2\n" +
+		"  exit 1\n" +
+		"fi"
 }
 
 func startManagedDocker3XUI(ctx context.Context, remote Remote, postgresPassword string) error {

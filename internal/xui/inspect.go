@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -487,8 +488,7 @@ func (p Provisioner) BackupManaged(ctx context.Context, input Input) (BackupResu
 		return result, nil
 	}
 	defer remote.Close()
-	backupCmd := "if [ -d " + shQuote(RemoteBaseDir) + " ]; then tar -C " + shQuote(filepath.Dir(RemoteBaseDir)) + " -czf - " + shQuote(filepath.Base(RemoteBaseDir)) + " | base64; fi"
-	out, err := remote.Run(ctx, "sh -lc "+shQuote(backupCmd))
+	out, err := remote.Run(ctx, "sh -lc "+shQuote(remoteBackupScript()))
 	if err != nil {
 		result.Warnings = append(result.Warnings, "remote backup failed: "+err.Error())
 		return result, nil
@@ -546,8 +546,7 @@ func (p Provisioner) RestoreLatestBackup(ctx context.Context, input Input) (Rest
 		if err := remote.Upload(ctx, remoteTmp, data, 0o600); err != nil {
 			return RestoreResult{}, err
 		}
-		cmd := "sh -lc " + shQuote("if [ -d "+RemoteBaseDir+" ]; then cd "+RemoteBaseDir+" && docker compose --profile postgres down || true; fi; mkdir -p "+filepath.Dir(RemoteBaseDir)+"; if [ -d "+RemoteBaseDir+" ]; then mv "+RemoteBaseDir+" "+RemoteBaseDir+".pre-restore.$(date -u +%Y%m%d-%H%M%S); fi; tar -C "+filepath.Dir(RemoteBaseDir)+" -xzf "+remoteTmp+"; cd "+RemoteBaseDir+" && docker compose --profile postgres up -d --force-recreate")
-		if _, err := remote.Run(ctx, cmd); err != nil {
+		if _, err := remote.Run(ctx, "sh -lc "+shQuote(remoteRestoreScript(remoteTmp))); err != nil {
 			return RestoreResult{}, fmt.Errorf("restore remote managed stack: %w", err)
 		}
 		result.RestoredRemote = true
@@ -809,6 +808,21 @@ func RenderRepairResult(result RepairResult) string {
 		fmt.Fprintf(&b, "Warning: %s\n", warning)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func remoteBackupScript() string {
+	parent := posixpath.Dir(RemoteBaseDir)
+	name := posixpath.Base(RemoteBaseDir)
+	return "if [ -d " + shQuote(RemoteBaseDir) + " ]; then tar -C " + shQuote(parent) + " -czf - " + shQuote(name) + " | base64; fi"
+}
+
+func remoteRestoreScript(remoteTmp string) string {
+	parent := posixpath.Dir(RemoteBaseDir)
+	return "if [ -d " + shQuote(RemoteBaseDir) + " ]; then cd " + shQuote(RemoteBaseDir) + " && docker compose --profile postgres down || true; fi; " +
+		"mkdir -p " + shQuote(parent) + "; " +
+		"if [ -d " + shQuote(RemoteBaseDir) + " ]; then mv " + shQuote(RemoteBaseDir) + " " + shQuote(RemoteBaseDir) + ".pre-restore.$(date -u +%Y%m%d-%H%M%S); fi; " +
+		"tar -C " + shQuote(parent) + " -xzf " + shQuote(remoteTmp) + "; " +
+		"cd " + shQuote(RemoteBaseDir) + " && docker compose --profile postgres up -d --force-recreate"
 }
 
 func RenderBackupResult(result BackupResult) string {

@@ -290,6 +290,40 @@ func TestBackupManagedCopiesLocalProjectAndRemoteArchive(t *testing.T) {
 	}
 }
 
+func TestRemoteBackupScriptUsesPOSIXRemotePaths(t *testing.T) {
+	script := remoteBackupScript()
+	for _, want := range []string{
+		"if [ -d '/opt/wdns-wizard/3x-ui' ]",
+		"tar -C '/opt/wdns-wizard'",
+		" '3x-ui' | base64",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("backup script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, `\opt\wdns-wizard`) {
+		t.Fatalf("backup script should use POSIX remote paths:\n%s", script)
+	}
+}
+
+func TestRemoteRestoreScriptUsesPOSIXRemotePaths(t *testing.T) {
+	script := remoteRestoreScript("/tmp/wdns-wizard-restore.tar.gz")
+	for _, want := range []string{
+		"cd '/opt/wdns-wizard/3x-ui' && docker compose --profile postgres down",
+		"mkdir -p '/opt/wdns-wizard'",
+		"mv '/opt/wdns-wizard/3x-ui' '/opt/wdns-wizard/3x-ui'.pre-restore.$(date -u +%Y%m%d-%H%M%S)",
+		"tar -C '/opt/wdns-wizard' -xzf '/tmp/wdns-wizard-restore.tar.gz'",
+		"cd '/opt/wdns-wizard/3x-ui' && docker compose --profile postgres up -d --force-recreate",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("restore script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, `\opt\wdns-wizard`) {
+		t.Fatalf("restore script should use POSIX remote paths:\n%s", script)
+	}
+}
+
 func writeProjectFiles(t *testing.T, root, domain, ip string, appliedAt time.Time) {
 	t.Helper()
 	paths := output.Paths(root, domain)
