@@ -91,6 +91,7 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 		"reality_mldsa65_seed":            generated.RealityMLDSA65Seed,
 		"reality_mlkem_decryption":        generated.RealityMLKEMDecryption,
 		"reality_mlkem_encryption":        generated.RealityMLKEMEncryption,
+		"reality_sni":                     generated.RealitySNI,
 		"hysteria2_obfs_password":         generated.Hysteria2ObfsPassword,
 		"shadowsocks_server_password":     generated.ShadowsocksServerPass,
 		"shadowsocks_client_password":     generated.ShadowsocksClientPass,
@@ -104,6 +105,7 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 		"tor_reality_mldsa65_seed":        generated.TorRealityMLDSA65Seed,
 		"tor_reality_mlkem_decryption":    generated.TorRealityMLKEMDecrypt,
 		"tor_reality_mlkem_encryption":    generated.TorRealityMLKEMEncrypt,
+		"tor_reality_sni":                 generated.TorRealitySNI,
 		"tor_hysteria2_password":          generated.TorHysteria2Password,
 		"tor_hysteria2_obfs_password":     generated.TorHysteria2ObfsPass,
 		"tor_shadowsocks_server_password": generated.TorShadowsocksServer,
@@ -119,6 +121,12 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 	if !strings.HasPrefix(generated.RealityMLKEMEncryption, "mlkem768x25519plus.native.0rtt.") {
 		t.Fatalf("unexpected reality encryption value: %s", generated.RealityMLKEMEncryption)
 	}
+	if !containsString(RealitySNICandidates(), generated.RealitySNI) {
+		t.Fatalf("unexpected reality SNI: %s", generated.RealitySNI)
+	}
+	if !containsString(RealitySNICandidates(), generated.TorRealitySNI) {
+		t.Fatalf("unexpected tor reality SNI: %s", generated.TorRealitySNI)
+	}
 	values := PlaintextMap("token", generated, "origin-key")
 	for _, key := range []string{
 		"vless_8443_uuid",
@@ -129,6 +137,7 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 		"reality_mldsa65_seed",
 		"reality_mlkem_decryption",
 		"reality_mlkem_encryption",
+		"reality_sni",
 		"hysteria2_obfs_password",
 		"shadowsocks_server_password",
 		"shadowsocks_client_password",
@@ -142,6 +151,7 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 		"tor_reality_mldsa65_seed",
 		"tor_reality_mlkem_decryption",
 		"tor_reality_mlkem_encryption",
+		"tor_reality_sni",
 		"tor_hysteria2_password",
 		"tor_hysteria2_obfs_password",
 		"tor_shadowsocks_server_password",
@@ -151,4 +161,13 @@ func TestGenerateIncludesRealitySecrets(t *testing.T) {
 			t.Fatalf("PlaintextMap missing %s", key)
 		}
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

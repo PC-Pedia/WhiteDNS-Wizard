@@ -50,6 +50,7 @@ func BuildProtocolBundle(domain string, values map[string]string) (ProtocolBundl
 		RealityMLDSA65Seed:     values["reality_mldsa65_seed"],
 		RealityMLKEMDecryption: values["reality_mlkem_decryption"],
 		RealityMLKEMEncryption: values["reality_mlkem_encryption"],
+		RealitySNI:             values["reality_sni"],
 		TrojanPassword:         values["trojan_password"],
 		Hysteria2Password:      values["hysteria2_password"],
 		Hysteria2ObfsPassword:  values["hysteria2_obfs_password"],
@@ -65,6 +66,7 @@ func BuildProtocolBundle(domain string, values map[string]string) (ProtocolBundl
 		TorRealityMLDSA65Seed:  values["tor_reality_mldsa65_seed"],
 		TorRealityMLKEMDecrypt: values["tor_reality_mlkem_decryption"],
 		TorRealityMLKEMEncrypt: values["tor_reality_mlkem_encryption"],
+		TorRealitySNI:          values["tor_reality_sni"],
 		TorHysteria2Password:   values["tor_hysteria2_password"],
 		TorHysteria2ObfsPass:   values["tor_hysteria2_obfs_password"],
 		TorShadowsocksServer:   values["tor_shadowsocks_server_password"],
@@ -169,6 +171,7 @@ func inboundAndLink(proto types.Protocol, values map[string]string) (Inbound, ty
 		uuid := required(values, "reality_vless_uuid")
 		publicKey := required(values, "reality_public_key")
 		shortID := required(values, "reality_short_id")
+		sni := realitySNI(values, "reality")
 		inbound := baseInbound(proto, "vless")
 		inbound.Settings = map[string]any{
 			"clients":    []map[string]any{vlessClient(uuid, proto.ClientEmail, DisplayNameForTag(proto.Tag))},
@@ -177,7 +180,7 @@ func inboundAndLink(proto types.Protocol, values map[string]string) (Inbound, ty
 		}
 		inbound.StreamSettings = realityXHTTPStream(values, "reality")
 		inbound.Sniffing = map[string]any{"enabled": false}
-		return inbound, link(proto, realityVLESSLink(proto, uuid, publicKey, shortID)), nil
+		return inbound, link(proto, realityVLESSLink(proto, uuid, publicKey, shortID, sni)), nil
 	case "shadowsocks_direct":
 		serverPassword := required(values, "shadowsocks_server_password")
 		clientPassword := required(values, "shadowsocks_client_password")
@@ -271,6 +274,7 @@ func inboundAndLink(proto types.Protocol, values map[string]string) (Inbound, ty
 		uuid := required(values, "tor_reality_vless_uuid")
 		publicKey := required(values, "tor_reality_public_key")
 		shortID := required(values, "tor_reality_short_id")
+		sni := realitySNI(values, "tor_reality")
 		inbound := baseInbound(proto, "vless")
 		inbound.Settings = map[string]any{
 			"clients":    []map[string]any{vlessClient(uuid, proto.ClientEmail, DisplayNameForTag(proto.Tag))},
@@ -279,7 +283,7 @@ func inboundAndLink(proto types.Protocol, values map[string]string) (Inbound, ty
 		}
 		inbound.StreamSettings = realityXHTTPStream(values, "tor_reality")
 		inbound.Sniffing = map[string]any{"enabled": false}
-		return inbound, link(proto, realityVLESSLink(proto, uuid, publicKey, shortID)), nil
+		return inbound, link(proto, realityVLESSLink(proto, uuid, publicKey, shortID, sni)), nil
 	case "tor_shadowsocks_direct":
 		serverPassword := required(values, "tor_shadowsocks_server_password")
 		clientPassword := required(values, "tor_shadowsocks_client_password")
@@ -424,6 +428,7 @@ func tlsSettingsWithALPN(serverName, certPath, keyPath string, alpn []string) ma
 }
 
 func realityXHTTPStream(values map[string]string, prefix string) map[string]any {
+	sni := realitySNI(values, prefix)
 	return map[string]any{
 		"network": "xhttp",
 		"xhttpSettings": map[string]any{
@@ -461,8 +466,8 @@ func realityXHTTPStream(values map[string]string, prefix string) map[string]any 
 		"realitySettings": map[string]any{
 			"show":         false,
 			"xver":         0,
-			"target":       "aws.amazon.com:443",
-			"serverNames":  []string{"aws.amazon.com"},
+			"target":       sni + ":443",
+			"serverNames":  []string{sni},
 			"privateKey":   required(values, prefix+"_private_key"),
 			"minClientVer": "",
 			"maxClientVer": "",
@@ -477,6 +482,14 @@ func realityXHTTPStream(values map[string]string, prefix string) map[string]any 
 			},
 		},
 	}
+}
+
+func realitySNI(values map[string]string, prefix string) string {
+	sni := strings.TrimSpace(values[prefix+"_sni"])
+	if sni == "" {
+		return secrets.DefaultRealitySNI()
+	}
+	return sni
 }
 
 func link(proto types.Protocol, raw string) types.ClientLink {
@@ -522,12 +535,12 @@ func directVLESSLink(proto types.Protocol, uuid string) string {
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, proto.Hostname, proto.Port, q, fragmentEscape(clientRemarkForTag(proto.Tag)))
 }
 
-func realityVLESSLink(proto types.Protocol, uuid, publicKey, shortID string) string {
+func realityVLESSLink(proto types.Protocol, uuid, publicKey, shortID, sni string) string {
 	q := orderedQuery(
 		queryParam{"type", "xhttp"},
 		queryParam{"security", "reality"},
 		queryParam{"encryption", "none"},
-		queryParam{"sni", "aws.amazon.com"},
+		queryParam{"sni", sni},
 		queryParam{"fp", "chrome"},
 		queryParam{"pbk", publicKey},
 		queryParam{"sid", shortID},

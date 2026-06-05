@@ -23,9 +23,11 @@ func TestEnsureXUISecretsBackfillsRealitySecrets(t *testing.T) {
 		"reality_mldsa65_seed",
 		"reality_mlkem_decryption",
 		"reality_mlkem_encryption",
+		"reality_sni",
 		"hysteria2_obfs_password",
 		"shadowsocks_server_password",
 		"shadowsocks_client_password",
+		"tor_reality_sni",
 	} {
 		if strings.TrimSpace(project.Secrets[key]) == "" {
 			t.Fatalf("missing backfilled %s", key)

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/curve25519"
@@ -21,6 +22,7 @@ type GeneratedSecrets struct {
 	RealityMLDSA65Seed     string `yaml:"reality_mldsa65_seed"`
 	RealityMLKEMDecryption string `yaml:"reality_mlkem_decryption"`
 	RealityMLKEMEncryption string `yaml:"reality_mlkem_encryption"`
+	RealitySNI             string `yaml:"reality_sni"`
 	TrojanPassword         string `yaml:"trojan_password"`
 	Hysteria2Password      string `yaml:"hysteria2_password"`
 	Hysteria2ObfsPassword  string `yaml:"hysteria2_obfs_password"`
@@ -36,6 +38,7 @@ type GeneratedSecrets struct {
 	TorRealityMLDSA65Seed  string `yaml:"tor_reality_mldsa65_seed"`
 	TorRealityMLKEMDecrypt string `yaml:"tor_reality_mlkem_decryption"`
 	TorRealityMLKEMEncrypt string `yaml:"tor_reality_mlkem_encryption"`
+	TorRealitySNI          string `yaml:"tor_reality_sni"`
 	TorHysteria2Password   string `yaml:"tor_hysteria2_password"`
 	TorHysteria2ObfsPass   string `yaml:"tor_hysteria2_obfs_password"`
 	TorShadowsocksServer   string `yaml:"tor_shadowsocks_server_password"`
@@ -129,6 +132,10 @@ func Generate() (GeneratedSecrets, error) {
 	if err != nil {
 		return GeneratedSecrets{}, err
 	}
+	realitySNI, err := randomRealitySNI()
+	if err != nil {
+		return GeneratedSecrets{}, err
+	}
 	torRealityPrivateKey, torRealityPublicKey, err := realityKeyPair()
 	if err != nil {
 		return GeneratedSecrets{}, err
@@ -149,6 +156,10 @@ func Generate() (GeneratedSecrets, error) {
 	if err != nil {
 		return GeneratedSecrets{}, err
 	}
+	torRealitySNI, err := randomRealitySNI()
+	if err != nil {
+		return GeneratedSecrets{}, err
+	}
 
 	return GeneratedSecrets{
 		VLESSUUID:              uuid.NewString(),
@@ -161,6 +172,7 @@ func Generate() (GeneratedSecrets, error) {
 		RealityMLDSA65Seed:     realityMLDSA65Seed,
 		RealityMLKEMDecryption: realityMLKEMDecryption,
 		RealityMLKEMEncryption: realityMLKEMEncryption,
+		RealitySNI:             realitySNI,
 		TrojanPassword:         trojanPassword,
 		Hysteria2Password:      hyPassword,
 		Hysteria2ObfsPassword:  hyObfsPassword,
@@ -176,6 +188,7 @@ func Generate() (GeneratedSecrets, error) {
 		TorRealityMLDSA65Seed:  torRealityMLDSA65Seed,
 		TorRealityMLKEMDecrypt: torRealityMLKEMDecryption,
 		TorRealityMLKEMEncrypt: torRealityMLKEMEncryption,
+		TorRealitySNI:          torRealitySNI,
 		TorHysteria2Password:   torHyPassword,
 		TorHysteria2ObfsPass:   torHyObfsPassword,
 		TorShadowsocksServer:   torShadowsocksServerPass,
@@ -244,6 +257,77 @@ func realityMLKEMValue(mode string) (string, error) {
 	return "mlkem768x25519plus.native." + mode + "." + value, nil
 }
 
+func RealitySNICandidates() []string {
+	return append([]string(nil), realitySNICandidates...)
+}
+
+func DefaultRealitySNI() string {
+	return realitySNICandidates[0]
+}
+
+func randomRealitySNI() (string, error) {
+	index, err := rand.Int(rand.Reader, big.NewInt(int64(len(realitySNICandidates))))
+	if err != nil {
+		return "", fmt.Errorf("choose reality sni: %w", err)
+	}
+	return realitySNICandidates[index.Int64()], nil
+}
+
+var realitySNICandidates = []string{
+	"digikala.com",
+	"aparat.com",
+	"filimo.com",
+	"divar.ir",
+	"snapp.ir",
+	"telewebion.com",
+	"namnak.com",
+	"varzesh3.com",
+	"cafebazaar.ir",
+	"snappfood.ir",
+	"virgool.io",
+	"torob.com",
+	"mci.ir",
+	"irancell.ir",
+	"rightel.ir",
+	"farhang.gov.ir",
+	"nic.ir",
+	"edu.sharif.edu",
+	"iau.ac.ir",
+	"ut.ac.ir",
+	"isna.ir",
+	"irna.ir",
+	"www.google-analytics.com",
+	"www.googletagmanager.com",
+	"fonts.googleapis.com",
+	"fonts.gstatic.com",
+	"dl.google.com",
+	"play.google.com",
+	"www.google.com",
+	"maps.googleapis.com",
+	"www.microsoft.com",
+	"www.bing.com",
+	"learn.microsoft.com",
+	"update.microsoft.com",
+	"download.microsoft.com",
+	"az764295.vo.msecnd.net",
+	"www.apple.com",
+	"swscan.apple.com",
+	"mesu.apple.com",
+	"updates.cdn-apple.com",
+	"configuration.apple.com",
+	"www.speedtest.net",
+	"www.samsung.com",
+	"www.asus.com",
+	"www.amd.com",
+	"www.cisco.com",
+	"www.nvidia.com",
+	"www.linksys.com",
+	"www.hp.com",
+	"www.dell.com",
+	"www.lenovo.com",
+	"www.xiaomi.com",
+}
+
 func PlaintextMap(token string, generated GeneratedSecrets, originPrivateKey string) map[string]string {
 	return map[string]string{
 		"cloudflare_token":                token,
@@ -258,6 +342,7 @@ func PlaintextMap(token string, generated GeneratedSecrets, originPrivateKey str
 		"reality_mldsa65_seed":            generated.RealityMLDSA65Seed,
 		"reality_mlkem_decryption":        generated.RealityMLKEMDecryption,
 		"reality_mlkem_encryption":        generated.RealityMLKEMEncryption,
+		"reality_sni":                     generated.RealitySNI,
 		"trojan_password":                 generated.TrojanPassword,
 		"hysteria2_password":              generated.Hysteria2Password,
 		"hysteria2_obfs_password":         generated.Hysteria2ObfsPassword,
@@ -273,6 +358,7 @@ func PlaintextMap(token string, generated GeneratedSecrets, originPrivateKey str
 		"tor_reality_mldsa65_seed":        generated.TorRealityMLDSA65Seed,
 		"tor_reality_mlkem_decryption":    generated.TorRealityMLKEMDecrypt,
 		"tor_reality_mlkem_encryption":    generated.TorRealityMLKEMEncrypt,
+		"tor_reality_sni":                 generated.TorRealitySNI,
 		"tor_hysteria2_password":          generated.TorHysteria2Password,
 		"tor_hysteria2_obfs_password":     generated.TorHysteria2ObfsPass,
 		"tor_shadowsocks_server_password": generated.TorShadowsocksServer,
