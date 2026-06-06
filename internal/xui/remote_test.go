@@ -12,12 +12,12 @@ import (
 )
 
 func TestRemoteUploadCommandUsesPOSIXParentAndClearErrors(t *testing.T) {
-	script := remoteUploadScript("/opt/wdns-wizard/3x-ui/docker-compose.yml", "/opt/wdns-wizard/3x-ui/docker-compose.yml.tmp", 0o644)
+	script := remoteUploadScript("/var/lib/whitedns/3x-ui/docker-compose.yml", "/var/lib/whitedns/3x-ui/docker-compose.yml.tmp", 0o644)
 
 	for _, want := range []string{
-		"parent='/opt/wdns-wizard/3x-ui'",
-		"tmp='/opt/wdns-wizard/3x-ui/docker-compose.yml.tmp'",
-		"target='/opt/wdns-wizard/3x-ui/docker-compose.yml'",
+		"parent='/var/lib/whitedns/3x-ui'",
+		"tmp='/var/lib/whitedns/3x-ui/docker-compose.yml.tmp'",
+		"target='/var/lib/whitedns/3x-ui/docker-compose.yml'",
 		"mkdir -p \"$parent\"",
 		"remote upload parent is not writable: $parent",
 		"remote upload parent does not exist: $parent",
@@ -33,9 +33,23 @@ func TestRemoteUploadCommandUsesPOSIXParentAndClearErrors(t *testing.T) {
 		t.Fatalf("upload script should use POSIX remote paths:\n%s", script)
 	}
 
-	cmd := remoteUploadCommand("/opt/wdns-wizard/3x-ui/docker-compose.yml", "/opt/wdns-wizard/3x-ui/docker-compose.yml.tmp", 0o644)
+	cmd := remoteUploadCommand("/var/lib/whitedns/3x-ui/docker-compose.yml", "/var/lib/whitedns/3x-ui/docker-compose.yml.tmp", 0o644)
 	if !strings.HasPrefix(cmd, "sh -lc ") {
 		t.Fatalf("upload command should run through sh -lc:\n%s", cmd)
+	}
+}
+
+func TestRemoteManagedPathsUseVarLibAndKeepLegacyPath(t *testing.T) {
+	if RemoteBaseDir != "/var/lib/whitedns/3x-ui" {
+		t.Fatalf("RemoteBaseDir = %q", RemoteBaseDir)
+	}
+	if OldRemoteBaseDir != "/opt/wdns-wizard/3x-ui" {
+		t.Fatalf("OldRemoteBaseDir = %q", OldRemoteBaseDir)
+	}
+	for _, path := range []string{RemoteComposePath, RemoteTorDockerfilePath, RemoteTorrcPath, HostOriginCertPath, HostOriginKeyPath, HostPublicCertPath, HostPublicKeyPath} {
+		if !strings.HasPrefix(path, RemoteBaseDir+"/") {
+			t.Fatalf("remote path %q should be under %q", path, RemoteBaseDir)
+		}
 	}
 }
 

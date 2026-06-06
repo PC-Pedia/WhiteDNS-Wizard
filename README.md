@@ -177,7 +177,7 @@ The interactive menu provides:
 | `1` | Current setup info | Shows saved project details, VPS IP, zone status, DNS/protocol plan summary, remote host, container name, last apply time, and client-links path. |
 | `2` | Diagnostics | Checks local files, certificates, DNS, Docker port publishing, Tor sidecar status, panel/API access, Xray config, and common protocol issues. |
 | `3` | Repair installation | Re-ensures the managed Docker stack, uploads certificates, repairs/restarts 3x-ui, reapplies WhiteDNS-managed inbounds/outbounds, and regenerates links. |
-| `4` | Backup installation | Creates a local backup of the project files and a remote archive of the managed `/opt/wdns-wizard/3x-ui` installation. |
+| `4` | Backup installation | Creates a local backup of the project files and a remote archive of the managed `/var/lib/whitedns/3x-ui` installation. |
 | `5` | Restore latest backup | Restores the latest available WhiteDNS backup for the selected project and managed remote installation. |
 | `6` | Support bundle | Writes a troubleshooting bundle with diagnostics, plans, state, logs, Docker status, 3x-ui logs, Tor logs, and relevant remote config snapshots. |
 | `7` | Get list of inbounds | Logs into the saved 3x-ui panel over SSH tunnel and lists inbound ID, state, remark, protocol, port, transport/security, and client count. |
@@ -251,8 +251,10 @@ logs/xui-provision-*.log
 Remote managed files are kept under:
 
 ```text
-/opt/wdns-wizard/3x-ui/
+/var/lib/whitedns/3x-ui/
 ```
+
+Older managed installs under `/opt/wdns-wizard/3x-ui/` are migrated to this path automatically when possible.
 
 ## Privacy Policy
 
@@ -370,7 +372,7 @@ find cmd internal pkg -name '*.go' -print0 | xargs -0 gofmt -w
 ### Development notes
 
 - Keep local state paths stable: `~/.wdns-wizard/...`.
-- Keep remote state paths stable: `/opt/wdns-wizard/3x-ui/...`.
+- Keep remote state paths stable: `/var/lib/whitedns/3x-ui/...`.
 - Use the interactive menu for end-to-end testing.
 - Use `xui plan` before `xui apply` when testing conflict detection.
 - `reset` preserves local secrets and client identities.

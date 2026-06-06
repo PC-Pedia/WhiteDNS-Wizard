@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	RemoteBaseDir           = "/opt/wdns-wizard/3x-ui"
+	// TODO(Pedi): Keep this legacy path only for backward compatibility with early WhiteDNS installs.
+	// Remove the /opt migration path in a near-future release after users have had time to migrate.
+	OldRemoteBaseDir        = "/opt/wdns-wizard/3x-ui"
+	RemoteBaseDir           = "/var/lib/whitedns/3x-ui"
 	RemoteComposePath       = RemoteBaseDir + "/docker-compose.yml"
 	RemoteTorDockerfilePath = RemoteBaseDir + "/tor/Dockerfile"
 	RemoteTorrcPath         = RemoteBaseDir + "/tor/torrc"
