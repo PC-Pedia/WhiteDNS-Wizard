@@ -109,6 +109,9 @@ func DetectRemote(ctx context.Context, remote Remote) (RemoteInfo, error) {
 	}
 	if _, err := remote.Run(ctx, "test -f "+shQuote(RemoteComposePath)); err == nil {
 		info.ManagedDocker3XUI = true
+	} else if _, err := remote.Run(ctx, "test -f "+shQuote(OldRemoteBaseDir+"/docker-compose.yml")); err == nil {
+		info.ManagedDocker3XUI = true
+		info.Warnings = append(info.Warnings, "Legacy managed path detected at "+OldRemoteBaseDir+". Apply will migrate it to "+RemoteBaseDir+".")
 	}
 	if _, err := remote.Run(ctx, "command -v x-ui >/dev/null 2>&1 || systemctl is-active --quiet x-ui"); err == nil && !info.ExistingDocker3XUI {
 		info.ExistingNonDockerXUI = true
@@ -274,19 +277,36 @@ func PrepareManagedDocker3XUI(ctx context.Context, remote Remote) error {
 func prepareManagedDocker3XUIScript() string {
 	return "set -u\n" +
 		"base=" + shQuote(RemoteBaseDir) + "\n" +
+		"old_base=" + shQuote(OldRemoteBaseDir) + "\n" +
 		"tor_dir=" + shQuote(RemoteBaseDir+"/tor") + "\n" +
-		"if ! mkdir -p \"$base\" \"$tor_dir\"; then\n" +
+		"db_dir=" + shQuote(RemoteBaseDir+"/db") + "\n" +
+		"cert_dir=" + shQuote(RemoteBaseDir+"/cert") + "\n" +
+		"cert_wdns_dir=" + shQuote(RemoteBaseDir+"/cert/wdns") + "\n" +
+		"pgdata_dir=" + shQuote(RemoteBaseDir+"/pgdata") + "\n" +
+		"if [ ! -d \"$base\" ] && [ -d \"$old_base\" ]; then\n" +
+		"  if [ -f \"$old_base/docker-compose.yml\" ]; then\n" +
+		"    (cd \"$old_base\" && docker compose --profile postgres down) || true\n" +
+		"  fi\n" +
+		"  if mkdir -p " + shQuote("/var/lib/whitedns") + " && mv \"$old_base\" \"$base\"; then\n" +
+		"    echo \"migrated managed directory from $old_base to $base\"\n" +
+		"  else\n" +
+		"    echo \"warning: could not migrate old managed directory from $old_base to $base; continuing with fresh directory\" >&2\n" +
+		"  fi\n" +
+		"fi\n" +
+		"if ! mkdir -p \"$base\" \"$tor_dir\" \"$db_dir\" \"$cert_dir\" \"$cert_wdns_dir\" \"$pgdata_dir\"; then\n" +
 		"  echo \"remote managed directory is not writable: $base\" >&2\n" +
 		"  exit 1\n" +
 		"fi\n" +
-		"if [ ! -w \"$base\" ]; then\n" +
-		"  echo \"remote managed directory is not writable: $base\" >&2\n" +
-		"  exit 1\n" +
-		"fi\n" +
-		"if [ ! -w \"$tor_dir\" ]; then\n" +
-		"  echo \"remote managed tor directory is not writable: $tor_dir\" >&2\n" +
-		"  exit 1\n" +
-		"fi"
+		"for dir in \"$base\" \"$tor_dir\" \"$db_dir\" \"$cert_dir\" \"$cert_wdns_dir\" \"$pgdata_dir\"; do\n" +
+		"  if [ ! -d \"$dir\" ]; then\n" +
+		"    echo \"remote managed directory was not created: $dir\" >&2\n" +
+		"    exit 1\n" +
+		"  fi\n" +
+		"  if [ ! -w \"$dir\" ]; then\n" +
+		"    echo \"remote managed directory is not writable: $dir\" >&2\n" +
+		"    exit 1\n" +
+		"  fi\n" +
+		"done"
 }
 
 func startManagedDocker3XUI(ctx context.Context, remote Remote, postgresPassword string) error {

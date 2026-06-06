@@ -10,12 +10,13 @@ import (
 )
 
 type fakeRemote struct {
-	commands []string
-	events   []string
-	uploads  map[string][]byte
-	results  map[string]error
-	outputs  map[string]string
-	failOnce map[string]error
+	commands  []string
+	events    []string
+	uploads   map[string][]byte
+	results   map[string]error
+	outputs   map[string]string
+	failOnce  map[string]error
+	tunnelErr error
 }
 
 func (r *fakeRemote) Run(ctx context.Context, command string) (string, error) {
@@ -50,6 +51,9 @@ func (r *fakeRemote) Upload(ctx context.Context, path string, data []byte, perm 
 }
 
 func (r *fakeRemote) Tunnel(ctx context.Context, remoteHost string, remotePort int) (Tunnel, error) {
+	if r.tunnelErr != nil {
+		return Tunnel{}, r.tunnelErr
+	}
 	return Tunnel{}, nil
 }
 
@@ -86,7 +90,7 @@ func TestProgressRecorderWritesLogFile(t *testing.T) {
 	assertContains(t, body, "Applying firewall rules.")
 }
 
-func TestPrepareManagedDocker3XUICreatesWritableBaseAndTorDirs(t *testing.T) {
+func TestPrepareManagedDocker3XUICreatesWritableBindMountDirsAndMigratesLegacyPath(t *testing.T) {
 	remote := &fakeRemote{}
 	if err := PrepareManagedDocker3XUI(context.Background(), remote); err != nil {
 		t.Fatalf("PrepareManagedDocker3XUI returned error: %v", err)
@@ -96,17 +100,25 @@ func TestPrepareManagedDocker3XUICreatesWritableBaseAndTorDirs(t *testing.T) {
 	}
 	assertContains(t, remote.commands[0], "sh -lc ")
 	script := prepareManagedDocker3XUIScript()
-	assertContains(t, script, "base='/opt/wdns-wizard/3x-ui'")
-	assertContains(t, script, "tor_dir='/opt/wdns-wizard/3x-ui/tor'")
-	assertContains(t, script, "mkdir -p \"$base\" \"$tor_dir\"")
+	assertContains(t, script, "base='/var/lib/whitedns/3x-ui'")
+	assertContains(t, script, "old_base='/opt/wdns-wizard/3x-ui'")
+	assertContains(t, script, "tor_dir='/var/lib/whitedns/3x-ui/tor'")
+	assertContains(t, script, "db_dir='/var/lib/whitedns/3x-ui/db'")
+	assertContains(t, script, "cert_dir='/var/lib/whitedns/3x-ui/cert'")
+	assertContains(t, script, "cert_wdns_dir='/var/lib/whitedns/3x-ui/cert/wdns'")
+	assertContains(t, script, "pgdata_dir='/var/lib/whitedns/3x-ui/pgdata'")
+	assertContains(t, script, "cd \"$old_base\" && docker compose --profile postgres down")
+	assertContains(t, script, "mv \"$old_base\" \"$base\"")
+	assertContains(t, script, "warning: could not migrate old managed directory from $old_base to $base; continuing with fresh directory")
+	assertContains(t, script, "mkdir -p \"$base\" \"$tor_dir\" \"$db_dir\" \"$cert_dir\" \"$cert_wdns_dir\" \"$pgdata_dir\"")
 	assertContains(t, script, "remote managed directory is not writable: $base")
-	assertContains(t, script, "remote managed tor directory is not writable: $tor_dir")
+	assertContains(t, script, "for dir in \"$base\" \"$tor_dir\" \"$db_dir\" \"$cert_dir\" \"$cert_wdns_dir\" \"$pgdata_dir\"")
 }
 
 func TestPrepareManagedDocker3XUIReturnsClearWritableError(t *testing.T) {
 	remote := &fakeRemote{
 		failOnce: map[string]error{
-			"mkdir -p \"$base\" \"$tor_dir\"": fmt.Errorf("remote command failed: remote managed directory is not writable: /opt/wdns-wizard/3x-ui"),
+			"mkdir -p \"$base\" \"$tor_dir\" \"$db_dir\" \"$cert_dir\" \"$cert_wdns_dir\" \"$pgdata_dir\"": fmt.Errorf("remote command failed: remote managed directory is not writable: /var/lib/whitedns/3x-ui"),
 		},
 	}
 	err := PrepareManagedDocker3XUI(context.Background(), remote)
@@ -114,7 +126,7 @@ func TestPrepareManagedDocker3XUIReturnsClearWritableError(t *testing.T) {
 		t.Fatal("expected prepare error")
 	}
 	assertContains(t, err.Error(), "prepare managed 3x-ui remote directory")
-	assertContains(t, err.Error(), "remote managed directory is not writable: /opt/wdns-wizard/3x-ui")
+	assertContains(t, err.Error(), "remote managed directory is not writable: /var/lib/whitedns/3x-ui")
 }
 
 func TestInstallDocker3XUIInstallsComposePluginWhenMissing(t *testing.T) {
@@ -172,7 +184,7 @@ func TestEnsureManagedDocker3XUIUsesProfileSafeCommands(t *testing.T) {
 	if len(remote.uploads[RemoteTorrcPath]) == 0 {
 		t.Fatal("expected torrc upload")
 	}
-	prepare := indexComposeTestEventContaining(remote.events, "mkdir -p \"$base\" \"$tor_dir\"")
+	prepare := indexComposeTestEventContaining(remote.events, "mkdir -p \"$base\" \"$tor_dir\" \"$db_dir\" \"$cert_dir\" \"$cert_wdns_dir\" \"$pgdata_dir\"")
 	composeUpload := indexComposeTestEventContaining(remote.events, "upload:"+RemoteComposePath)
 	torDockerfileUpload := indexComposeTestEventContaining(remote.events, "upload:"+RemoteTorDockerfilePath)
 	torrcUpload := indexComposeTestEventContaining(remote.events, "upload:"+RemoteTorrcPath)

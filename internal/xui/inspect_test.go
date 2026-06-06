@@ -290,11 +290,43 @@ func TestBackupManagedCopiesLocalProjectAndRemoteArchive(t *testing.T) {
 	}
 }
 
+func TestDeleteManagedRemovesNewAndLegacyManagedPaths(t *testing.T) {
+	root := t.TempDir()
+	writeProjectFiles(t, root, "example.com", "1.2.3.4", time.Now().UTC())
+	writeProjectSecrets(t, root, "example.com", map[string]string{"panel_username": "admin", "panel_password": "secret", "panel_base_path": "/panel/"})
+	remote := &fakeRemote{tunnelErr: context.Canceled}
+	provisioner := Provisioner{RemoteFactory: func(ctx context.Context, cfg SSHConfig) (Remote, error) {
+		return remote, nil
+	}}
+
+	result, err := provisioner.DeleteManaged(context.Background(), Input{
+		Domain: "example.com",
+		Root:   root,
+		SSH:    SSHConfig{Host: "1.2.3.4", User: "root", Password: "pw"},
+	})
+	if err != nil {
+		t.Fatalf("DeleteManaged returned error: %v", err)
+	}
+	if !result.RemovedManagedStack {
+		t.Fatalf("expected managed stack to be marked removed: %+v", result)
+	}
+	joined := strings.Join(remote.commands, "\n")
+	for _, want := range []string{
+		"cd '/var/lib/whitedns/3x-ui' && docker compose --profile postgres down",
+		"rm -rf '/var/lib/whitedns/3x-ui'",
+		"if [ -d '/opt/wdns-wizard/3x-ui' ]; then rm -rf '/opt/wdns-wizard/3x-ui'; fi",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("delete commands missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 func TestRemoteBackupScriptUsesPOSIXRemotePaths(t *testing.T) {
 	script := remoteBackupScript()
 	for _, want := range []string{
-		"if [ -d '/opt/wdns-wizard/3x-ui' ]",
-		"tar -C '/opt/wdns-wizard'",
+		"if [ -d '/var/lib/whitedns/3x-ui' ]",
+		"tar -C '/var/lib/whitedns'",
 		" '3x-ui' | base64",
 	} {
 		if !strings.Contains(script, want) {
@@ -309,11 +341,11 @@ func TestRemoteBackupScriptUsesPOSIXRemotePaths(t *testing.T) {
 func TestRemoteRestoreScriptUsesPOSIXRemotePaths(t *testing.T) {
 	script := remoteRestoreScript("/tmp/wdns-wizard-restore.tar.gz")
 	for _, want := range []string{
-		"cd '/opt/wdns-wizard/3x-ui' && docker compose --profile postgres down",
-		"mkdir -p '/opt/wdns-wizard'",
-		"mv '/opt/wdns-wizard/3x-ui' '/opt/wdns-wizard/3x-ui'.pre-restore.$(date -u +%Y%m%d-%H%M%S)",
-		"tar -C '/opt/wdns-wizard' -xzf '/tmp/wdns-wizard-restore.tar.gz'",
-		"cd '/opt/wdns-wizard/3x-ui' && docker compose --profile postgres up -d --force-recreate",
+		"cd '/var/lib/whitedns/3x-ui' && docker compose --profile postgres down",
+		"mkdir -p '/var/lib/whitedns'",
+		"mv '/var/lib/whitedns/3x-ui' '/var/lib/whitedns/3x-ui'.pre-restore.$(date -u +%Y%m%d-%H%M%S)",
+		"tar -C '/var/lib/whitedns' -xzf '/tmp/wdns-wizard-restore.tar.gz'",
+		"cd '/var/lib/whitedns/3x-ui' && docker compose --profile postgres up -d --force-recreate",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("restore script missing %q:\n%s", want, script)
