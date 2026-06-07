@@ -290,6 +290,38 @@ func TestBackupManagedCopiesLocalProjectAndRemoteArchive(t *testing.T) {
 	}
 }
 
+func TestDeleteManagedRemovesNewAndLegacyManagedPaths(t *testing.T) {
+	root := t.TempDir()
+	writeProjectFiles(t, root, "example.com", "1.2.3.4", time.Now().UTC())
+	writeProjectSecrets(t, root, "example.com", map[string]string{"panel_username": "admin", "panel_password": "secret", "panel_base_path": "/panel/"})
+	remote := &fakeRemote{tunnelErr: context.Canceled}
+	provisioner := Provisioner{RemoteFactory: func(ctx context.Context, cfg SSHConfig) (Remote, error) {
+		return remote, nil
+	}}
+
+	result, err := provisioner.DeleteManaged(context.Background(), Input{
+		Domain: "example.com",
+		Root:   root,
+		SSH:    SSHConfig{Host: "1.2.3.4", User: "root", Password: "pw"},
+	})
+	if err != nil {
+		t.Fatalf("DeleteManaged returned error: %v", err)
+	}
+	if !result.RemovedManagedStack {
+		t.Fatalf("expected managed stack to be marked removed: %+v", result)
+	}
+	joined := strings.Join(remote.commands, "\n")
+	for _, want := range []string{
+		"cd '/var/lib/whitedns/3x-ui' && docker compose --profile postgres down",
+		"rm -rf '/var/lib/whitedns/3x-ui'",
+		"if [ -d '/opt/wdns-wizard/3x-ui' ]; then rm -rf '/opt/wdns-wizard/3x-ui'; fi",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("delete commands missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 func TestRemoteBackupScriptUsesPOSIXRemotePaths(t *testing.T) {
 	script := remoteBackupScript()
 	for _, want := range []string{

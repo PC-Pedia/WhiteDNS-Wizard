@@ -228,6 +228,9 @@ func (p Provisioner) DeleteManaged(ctx context.Context, input Input) (DeleteResu
 		if _, err := remote.Run(ctx, "rm -rf "+shQuote(RemoteBaseDir)); err != nil {
 			result.Warnings = append(result.Warnings, "Could not remove managed files: "+err.Error())
 		}
+		if _, err := remote.Run(ctx, "if [ -d "+shQuote(OldRemoteBaseDir)+" ]; then rm -rf "+shQuote(OldRemoteBaseDir)+"; fi"); err != nil {
+			result.Warnings = append(result.Warnings, "Could not remove legacy managed files: "+err.Error())
+		}
 	}
 	return result, nil
 }
