@@ -113,13 +113,13 @@ WhiteDNS creates these A records for the selected domain. Replace `<domain>` and
 | `panel.<domain>` | A | `<vps-ip>` | DNS-only | 3x-ui dashboard |
 | `direct.<domain>` | A | `<vps-ip>` | DNS-only | Direct VLESS TCP TLS |
 | `hy2.<domain>` | A | `<vps-ip>` | DNS-only | Hysteria2 UDP |
-| `reality.<domain>` | A | `<vps-ip>` | DNS-only | Reality XHTTP |
+| `reality.<domain>` | A | `<vps-ip>` | DNS-only | Reality TCP Vision |
 | `ss.<domain>` | A | `<vps-ip>` | DNS-only | Shadowsocks 2022 |
 | `tor-vless-ws.<domain>` | A | `<vps-ip>` | DNS-only | VLESS WS routed through Tor |
 | `tor-vless-ws-8443.<domain>` | A | `<vps-ip>` | DNS-only | VLESS WS 8443 routed through Tor |
 | `tor-hy2.<domain>` | A | `<vps-ip>` | DNS-only | Hysteria2 routed through Tor |
 | `tor-direct.<domain>` | A | `<vps-ip>` | DNS-only | Direct VLESS routed through Tor |
-| `tor-reality.<domain>` | A | `<vps-ip>` | DNS-only | Reality XHTTP routed through Tor |
+| `tor-reality.<domain>` | A | `<vps-ip>` | DNS-only | Reality TCP Vision routed through Tor |
 | `tor-ss.<domain>` | A | `<vps-ip>` | DNS-only | Shadowsocks routed through Tor |
 
 ACME also creates temporary TXT records during public certificate issuance:
@@ -140,13 +140,13 @@ WhiteDNS creates import strings for:
 | `VLESS WS 8443 @whiteDNS` | `trojan.<domain>` | `8443/tcp` | WebSocket TLS | Cloudflare proxied |
 | `Hysteria2 @whiteDNS` | `hy2.<domain>` | `443/udp` | Hysteria2 TLS | Direct |
 | `Direct VLESS @whiteDNS` | `direct.<domain>` | `2087/tcp` | TCP TLS | Direct |
-| `Reality XHTTP @whiteDNS` | `reality.<domain>` | `2083/tcp` | XHTTP Reality | Direct |
+| `Reality TCP Vision @whiteDNS` | `reality.<domain>` | `2083/tcp` | TCP Reality Vision | Direct |
 | `Shadowsocks @whiteDNS` | `ss.<domain>` | `8388/tcp,udp` | Shadowsocks 2022 | Direct |
 | `VLESS WS Tor @whiteDNS` | `tor-vless-ws.<domain>` | `2097/tcp` | WebSocket TLS | Server-side Tor exit |
 | `VLESS WS 8443 Tor @whiteDNS` | `tor-vless-ws-8443.<domain>` | `2098/tcp` | WebSocket TLS | Server-side Tor exit |
 | `Hysteria2 Tor @whiteDNS` | `tor-hy2.<domain>` | `2099/udp` | Hysteria2 TLS | Server-side Tor exit |
 | `Direct VLESS Tor @whiteDNS` | `tor-direct.<domain>` | `2100/tcp` | TCP TLS | Server-side Tor exit |
-| `Reality XHTTP Tor @whiteDNS` | `tor-reality.<domain>` | `2101/tcp` | XHTTP Reality | Server-side Tor exit |
+| `Reality TCP Vision Tor @whiteDNS` | `tor-reality.<domain>` | `2101/tcp` | TCP Reality Vision | Server-side Tor exit |
 | `Shadowsocks Tor @whiteDNS` | `tor-ss.<domain>` | `8390/tcp,udp` | Shadowsocks 2022 | Server-side Tor exit |
 
 Reality profiles currently use either `apple.com` or `docker.com` as the saved SNI and Reality target. Normal TLS profiles keep their own hostnames as SNI so public certificate validation continues to work.

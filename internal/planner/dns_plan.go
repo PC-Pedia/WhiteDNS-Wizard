@@ -50,7 +50,7 @@ func GenerateDNSPlan(domain, vpsIP string) types.DNSPlan {
 			Content: vpsIP,
 			Proxied: false,
 			TTL:     types.DefaultTTL,
-			Purpose: "reality_xhttp_direct",
+			Purpose: "reality_tcp_vision_direct",
 		},
 		{
 			Name:    "ss." + domain,
@@ -98,7 +98,7 @@ func GenerateDNSPlan(domain, vpsIP string) types.DNSPlan {
 			Content: vpsIP,
 			Proxied: false,
 			TTL:     types.DefaultTTL,
-			Purpose: "tor_reality_xhttp_direct",
+			Purpose: "tor_reality_tcp_vision_direct",
 		},
 		{
 			Name:    "tor-ss." + domain,

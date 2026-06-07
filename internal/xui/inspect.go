@@ -622,7 +622,7 @@ func (p Provisioner) SupportBundle(ctx context.Context, input Input) (SupportBun
 		{"docker-logs-3xui-app.txt", "docker logs --tail 160 3xui_app 2>&1 || true"},
 		{"docker-logs-3xui-postgres.txt", "docker logs --tail 120 3xui_postgres 2>&1 || true"},
 		{"docker-logs-3xui-tor.txt", "docker logs --tail 120 3xui_tor 2>&1 || true"},
-		{"xray-reality-config.txt", `docker exec 3xui_app sh -lc 'grep -n -A80 -B10 "wdns-reality-xhttp\|wdns-tor-reality-xhttp" /app/bin/config.json 2>/dev/null || grep -n -A80 -B10 "wdns-reality-xhttp\|wdns-tor-reality-xhttp" bin/config.json 2>/dev/null || true'`},
+		{"xray-reality-config.txt", `docker exec 3xui_app sh -lc 'grep -n -A80 -B10 "wdns-reality-tcp-vision\|wdns-tor-reality-tcp-vision\|wdns-reality-xhttp\|wdns-tor-reality-xhttp" /app/bin/config.json 2>/dev/null || grep -n -A80 -B10 "wdns-reality-tcp-vision\|wdns-tor-reality-tcp-vision\|wdns-reality-xhttp\|wdns-tor-reality-xhttp" bin/config.json 2>/dev/null || true'`},
 		{"firewall.txt", "sh -lc 'if command -v ufw >/dev/null 2>&1; then ufw status verbose; elif command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --state && firewall-cmd --list-all; else echo no ufw/firewalld detected; fi'"},
 		{"ports.txt", "sh -lc 'if command -v ss >/dev/null 2>&1; then ss -lntup; else netstat -tulpen 2>/dev/null || true; fi'"},
 	} {
@@ -1098,10 +1098,11 @@ func addRealityConfigChecks(add func(string, string, string), inbounds []Inbound
 	for _, item := range []struct {
 		name   string
 		tag    string
+		legacy string
 		sniKey string
 	}{
-		{name: "reality config", tag: "wdns-reality-xhttp", sniKey: "reality_sni"},
-		{name: "tor reality config", tag: "wdns-tor-reality-xhttp", sniKey: "tor_reality_sni"},
+		{name: "reality config", tag: "wdns-reality-tcp-vision", legacy: "wdns-reality-xhttp", sniKey: "reality_sni"},
+		{name: "tor reality config", tag: "wdns-tor-reality-tcp-vision", legacy: "wdns-tor-reality-xhttp", sniKey: "tor_reality_sni"},
 	} {
 		expected := strings.TrimSpace(values[item.sniKey])
 		if expected == "" {
@@ -1110,10 +1111,30 @@ func addRealityConfigChecks(add func(string, string, string), inbounds []Inbound
 		}
 		inbound, ok := findInboundByTag(inbounds, item.tag)
 		if !ok {
+			if _, legacy := findInboundByTag(inbounds, item.legacy); legacy {
+				add(item.name, "FAIL", "legacy Reality XHTTP inbound found; rerun apply to replace it with TCP Vision")
+				continue
+			}
 			add(item.name, "FAIL", "managed inbound not found")
 			continue
 		}
-		settings, _ := normalizedMap(inbound.StreamSettings["realitySettings"])
+		stream, _ := normalizedMap(inbound.StreamSettings)
+		if stream["network"] == "tcp" && stream["security"] == "reality" {
+			add(item.name+" transport", "PASS", "network=tcp security=reality")
+		} else {
+			add(item.name+" transport", "FAIL", fmt.Sprintf("expected network=tcp security=reality, got network=%v security=%v", stream["network"], stream["security"]))
+		}
+		if _, hasXHTTP := stream["xhttpSettings"]; hasXHTTP {
+			add(item.name+" xhttp", "FAIL", "legacy xhttpSettings found; rerun apply to recreate the inbound")
+		} else {
+			add(item.name+" xhttp", "PASS", "no xhttpSettings present")
+		}
+		if realityInboundHasVisionFlow(inbound) {
+			add(item.name+" flow", "PASS", "client flow="+realityVisionFlow)
+		} else {
+			add(item.name+" flow", "FAIL", "client flow is missing "+realityVisionFlow)
+		}
+		settings, _ := normalizedMap(stream["realitySettings"])
 		target := strings.TrimSpace(fmt.Sprint(settings["target"]))
 		serverNames := stringList(settings["serverNames"])
 		if target == expected+":443" && stringSliceContains(serverNames, expected) {
@@ -1150,7 +1171,21 @@ func normalizedMap(value any) (map[string]any, bool) {
 func realityClientLinkMatches(links types.ClientLinks, tag, expectedSNI string) bool {
 	remark := DisplayNameForTag(tag)
 	for _, client := range links.Clients {
-		if client.Name == remark && strings.Contains(client.Link, "sni="+expectedSNI) {
+		if client.Name == remark &&
+			strings.Contains(client.Link, "type=tcp") &&
+			strings.Contains(client.Link, "flow="+realityVisionFlow) &&
+			strings.Contains(client.Link, "security=reality") &&
+			strings.Contains(client.Link, "sni="+expectedSNI) &&
+			strings.Contains(client.Link, "spx=%2F") {
+			return true
+		}
+	}
+	return false
+}
+
+func realityInboundHasVisionFlow(inbound Inbound) bool {
+	for _, client := range clientsFromSettings(inbound.Settings) {
+		if fmt.Sprint(client["flow"]) == realityVisionFlow {
 			return true
 		}
 	}

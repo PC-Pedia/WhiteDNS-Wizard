@@ -62,7 +62,7 @@ func TestWriteXUIWritesPlainClientLinks(t *testing.T) {
 	paths := Paths(root, "example.com")
 	links := types.ClientLinks{Clients: []types.ClientLink{
 		{Name: "VLESS WS @whiteDNS", Link: "vless://uuid@vpn.example.com:443?type=ws&security=tls#VLESS%20WS%20%40whiteDNS"},
-		{Name: "Reality XHTTP @whiteDNS", Link: "vless://uuid@reality.example.com:2083?type=xhttp&security=reality#Reality%20XHTTP%20%40whiteDNS"},
+		{Name: "Reality TCP Vision @whiteDNS", Link: "vless://uuid@reality.example.com:2083?type=tcp&security=reality&flow=xtls-rprx-vision#Reality%20TCP%20Vision%20%40whiteDNS"},
 	}}
 
 	if err := WriteXUI(paths, types.XUIPlan{}, types.XUIState{}, links, "", "", ""); err != nil {
@@ -74,8 +74,8 @@ func TestWriteXUIWritesPlainClientLinks(t *testing.T) {
 	}
 	want := "# VLESS WS @whiteDNS\n" +
 		"vless://uuid@vpn.example.com:443?type=ws&security=tls#VLESS%20WS%20%40whiteDNS\n\n" +
-		"# Reality XHTTP @whiteDNS\n" +
-		"vless://uuid@reality.example.com:2083?type=xhttp&security=reality#Reality%20XHTTP%20%40whiteDNS\n\n"
+		"# Reality TCP Vision @whiteDNS\n" +
+		"vless://uuid@reality.example.com:2083?type=tcp&security=reality&flow=xtls-rprx-vision#Reality%20TCP%20Vision%20%40whiteDNS\n\n"
 	if string(data) != want {
 		t.Fatalf("client links text = %q, want %q", string(data), want)
 	}

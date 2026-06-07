@@ -99,27 +99,37 @@ func TestRealityConfigDiagnosticsCompareServerAndClientSNI(t *testing.T) {
 		checks = append(checks, DiagnosticCheck{Name: name, Status: status, Detail: detail})
 	}
 	addRealityConfigChecks(add, []Inbound{{
-		Tag: "wdns-reality-xhttp",
+		Tag: "wdns-reality-tcp-vision",
+		Settings: map[string]any{
+			"clients": []map[string]any{{"flow": realityVisionFlow}},
+		},
 		StreamSettings: map[string]any{
+			"network":  "tcp",
+			"security": "reality",
 			"realitySettings": map[string]any{
 				"target":      "apple.com:443",
 				"serverNames": []string{"apple.com"},
 			},
 		},
 	}, {
-		Tag: "wdns-tor-reality-xhttp",
+		Tag: "wdns-tor-reality-tcp-vision",
+		Settings: map[string]any{
+			"clients": []map[string]any{{"flow": realityVisionFlow}},
+		},
 		StreamSettings: map[string]any{
+			"network":  "tcp",
+			"security": "reality",
 			"realitySettings": map[string]any{
 				"target":      "bad.example:443",
 				"serverNames": []string{"bad.example"},
 			},
 		},
 	}}, types.ClientLinks{Clients: []types.ClientLink{{
-		Name: "Reality XHTTP @whiteDNS",
-		Link: "vless://uuid@reality.example.com:2083?type=xhttp&security=reality&sni=apple.com",
+		Name: "Reality TCP Vision @whiteDNS",
+		Link: "vless://uuid@reality.example.com:2083?type=tcp&security=reality&flow=xtls-rprx-vision&sni=apple.com&spx=%2F",
 	}, {
-		Name: "Reality XHTTP Tor @whiteDNS",
-		Link: "vless://uuid@tor-reality.example.com:2101?type=xhttp&security=reality&sni=apple.com",
+		Name: "Reality TCP Vision Tor @whiteDNS",
+		Link: "vless://uuid@tor-reality.example.com:2101?type=tcp&security=reality&flow=xtls-rprx-vision&sni=apple.com&spx=%2F",
 	}}}, map[string]string{
 		"reality_sni":     "apple.com",
 		"tor_reality_sni": "apple.com",

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/whitedns/wdns-wizard/internal/acme"
 	"github.com/whitedns/wdns-wizard/internal/app"
 	"github.com/whitedns/wdns-wizard/internal/planner"
 	"github.com/whitedns/wdns-wizard/internal/xui"
@@ -1096,6 +1097,19 @@ func (m model) handleProvisionError(err error) model {
 		m.xuiPlan.Warnings = appendWarnings(m.xuiPlan.Warnings, conflict.Warnings)
 		m.step = stepXUIConfirm
 		m.inputError = "3x-ui conflicts were found after the managed stack became available. Review the list before confirming replacement."
+		return m
+	}
+	var acmePreflight acme.PreflightError
+	if errors.As(err, &acmePreflight) {
+		if acmePreflight.Kind == acme.PreflightKindToken {
+			m.step = stepToken
+			m.tokenInput.Focus()
+			m.inputError = "Cloudflare API token cannot access this zone for ACME DNS-01. Check token scope, paste a valid token, and try again."
+			return m
+		}
+		m.step = stepDomain
+		m.domainInput.Focus()
+		m.inputError = acmePreflight.Error()
 		return m
 	}
 

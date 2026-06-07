@@ -10,14 +10,20 @@ import (
 	"time"
 
 	"github.com/whitedns/wdns-wizard/internal/acme"
+	"github.com/whitedns/wdns-wizard/internal/cloudflare"
 	"github.com/whitedns/wdns-wizard/internal/credentials"
 	"github.com/whitedns/wdns-wizard/internal/output"
 	"github.com/whitedns/wdns-wizard/pkg/types"
 )
 
+type ACMEPreflightChecker interface {
+	Check(ctx context.Context, input acme.PreflightInput) error
+}
+
 type Provisioner struct {
 	RemoteFactory       RemoteFactory
 	Issuer              acme.Issuer
+	ACMEPreflight       ACMEPreflightChecker
 	APIClient           func(baseURL, basePath string) (*APIClient, error)
 	RealitySNIValidator RealitySNIValidator
 }
@@ -26,6 +32,7 @@ func NewProvisioner() Provisioner {
 	return Provisioner{
 		RemoteFactory: DialSSH,
 		Issuer:        acme.LegoIssuer{},
+		ACMEPreflight: acme.PreflightChecker{},
 		APIClient:     NewAPIClient,
 	}
 }
@@ -109,6 +116,10 @@ func (p Provisioner) Apply(ctx context.Context, input Input) (Result, error) {
 	progress.SetPath(project.Paths.XUILog)
 	progress.Logf("Connected to %s. Docker installed: %t. Managed 3x-ui: %t.", input.SSH.Host, info.DockerInstalled, info.ManagedDocker3XUI)
 	defer remote.Close()
+
+	if err := p.preflightCertificatesIfNeeded(ctx, project, progress); err != nil {
+		return Result{}, err
+	}
 
 	plan := buildPlan(project.Domain, input, info, bundle, nil)
 	installed := false
@@ -359,7 +370,10 @@ func (p Provisioner) ensureCertificates(ctx context.Context, project projectData
 		return err
 	}
 	if strings.TrimSpace(creds.APIToken) == "" {
-		return fmt.Errorf("saved Cloudflare API token is required for ACME DNS-01")
+		return acme.PreflightError{Kind: acme.PreflightKindToken, Domain: project.Domain, Detail: "saved Cloudflare API token is required for ACME DNS-01"}
+	}
+	if err := p.runACMEPreflight(ctx, project.Domain, creds, progress); err != nil {
+		return err
 	}
 	issuer := p.Issuer
 	if issuer == nil {
@@ -383,6 +397,39 @@ func (p Provisioner) ensureCertificates(ctx context.Context, project projectData
 	if err := os.WriteFile(project.Paths.PublicKey, []byte(cert.KeyPEM), 0o600); err != nil {
 		return fmt.Errorf("write public ACME key: %w", err)
 	}
+	return nil
+}
+
+func (p Provisioner) preflightCertificatesIfNeeded(ctx context.Context, project projectData, progress *progressRecorder) error {
+	coveredHostnames := publicACMECoveredHostnames(project.Domain)
+	if project.publicCertFresh(coveredHostnames) {
+		progress.Logf("Skipping ACME DNS preflight because an existing fresh public certificate covers %s.", strings.Join(coveredHostnames, ", "))
+		return nil
+	}
+	progress.Logf("Running ACME DNS preflight for %s before remote Docker changes.", project.Domain)
+	creds, err := credentials.Load(project.Root)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(creds.APIToken) == "" {
+		return acme.PreflightError{Kind: acme.PreflightKindToken, Domain: project.Domain, Detail: "saved Cloudflare API token is required for ACME DNS-01"}
+	}
+	return p.runACMEPreflight(ctx, project.Domain, creds, progress)
+}
+
+func (p Provisioner) runACMEPreflight(ctx context.Context, domain string, creds credentials.CloudflareCredentials, progress *progressRecorder) error {
+	checker := p.ACMEPreflight
+	if checker == nil {
+		checker = acme.PreflightChecker{}
+	}
+	if err := checker.Check(ctx, acme.PreflightInput{
+		Domain:      domain,
+		ZoneChecker: cloudflare.NewSDKClient(creds.APIToken, creds.AccountID),
+	}); err != nil {
+		progress.Logf("ACME DNS preflight failed for %s: %s", domain, oneLine(err.Error()))
+		return err
+	}
+	progress.Logf("ACME DNS preflight passed for %s.", domain)
 	return nil
 }
 
@@ -490,6 +537,10 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func oneLine(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func retry(ctx context.Context, attempts int, delay time.Duration, fn func() error) error {

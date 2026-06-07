@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/whitedns/wdns-wizard/internal/acme"
 	"github.com/whitedns/wdns-wizard/internal/app"
 	"github.com/whitedns/wdns-wizard/internal/credentials"
 	"github.com/whitedns/wdns-wizard/internal/xui"
@@ -189,6 +190,46 @@ func TestInvalidCloudflareTokenReturnsToTokenStep(t *testing.T) {
 	}
 	if !strings.Contains(got.View(), "invalid or not authorized") {
 		t.Fatalf("view did not include token error: %s", got.View())
+	}
+}
+
+func TestACMEPreflightTokenErrorReturnsToTokenStep(t *testing.T) {
+	m := newModel(app.Provisioner{Root: t.TempDir()})
+	m.step = stepXUIApplying
+
+	next, _ := m.Update(errorMsg{err: acme.PreflightError{
+		Kind:   acme.PreflightKindToken,
+		Domain: "example.com",
+		Detail: "Cloudflare zone was not found or the token cannot access it",
+	}})
+	got := next.(model)
+
+	if got.step != stepToken {
+		t.Fatalf("step = %v, want stepToken", got.step)
+	}
+	if !strings.Contains(got.View(), "cannot access this zone") {
+		t.Fatalf("view did not include token-scope guidance: %s", got.View())
+	}
+}
+
+func TestACMEPreflightDNSErrorReturnsToDomainStep(t *testing.T) {
+	m := newModel(app.Provisioner{Root: t.TempDir()})
+	m.step = stepXUIApplying
+
+	next, _ := m.Update(errorMsg{err: acme.PreflightError{
+		Kind:   acme.PreflightKindDNS,
+		Domain: "example.com",
+		Detail: "SOA _acme-challenge.example.com. @1.1.1.1:53 returned REFUSED",
+	}})
+	got := next.(model)
+
+	if got.step != stepDomain {
+		t.Fatalf("step = %v, want stepDomain", got.step)
+	}
+	for _, want := range []string{"ACME DNS preflight failed", "_acme-challenge.example.com", "returned REFUSED"} {
+		if !strings.Contains(got.View(), want) {
+			t.Fatalf("view missing %q:\n%s", want, got.View())
+		}
 	}
 }
 
@@ -512,7 +553,7 @@ func TestXUIDoneRendersLinksInPlainCodeBlock(t *testing.T) {
 		ProjectDir: "/tmp/wdns/project",
 		Links: types.ClientLinks{Clients: []types.ClientLink{
 			{Name: "VLESS WS @whiteDNS", Link: "vless://uuid@vpn.example.com:443?type=ws#VLESS%20WS%20%40whiteDNS"},
-			{Name: "Reality XHTTP @whiteDNS", Link: "vless://uuid@reality.example.com:2083?type=xhttp#Reality%20XHTTP%20%40whiteDNS"},
+			{Name: "Reality TCP Vision @whiteDNS", Link: "vless://uuid@reality.example.com:2083?type=tcp&flow=xtls-rprx-vision#Reality%20TCP%20Vision%20%40whiteDNS"},
 		}},
 	}
 
@@ -520,8 +561,8 @@ func TestXUIDoneRendersLinksInPlainCodeBlock(t *testing.T) {
 	block := "```\n" +
 		"# VLESS WS @whiteDNS\n" +
 		"vless://uuid@vpn.example.com:443?type=ws#VLESS%20WS%20%40whiteDNS\n\n" +
-		"# Reality XHTTP @whiteDNS\n" +
-		"vless://uuid@reality.example.com:2083?type=xhttp#Reality%20XHTTP%20%40whiteDNS\n\n" +
+		"# Reality TCP Vision @whiteDNS\n" +
+		"vless://uuid@reality.example.com:2083?type=tcp&flow=xtls-rprx-vision#Reality%20TCP%20Vision%20%40whiteDNS\n\n" +
 		"Client links file:\n" +
 		"/tmp/wdns/project/client-links.txt\n\n" +
 		"Project directory:\n" +

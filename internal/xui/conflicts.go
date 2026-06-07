@@ -261,7 +261,7 @@ func torInboundTags() []string {
 		"wdns-tor-vless-ws-8443",
 		"wdns-tor-hysteria2",
 		"wdns-tor-direct-vless",
-		"wdns-tor-reality-xhttp",
+		"wdns-tor-reality-tcp-vision",
 		"wdns-tor-shadowsocks",
 	}
 }

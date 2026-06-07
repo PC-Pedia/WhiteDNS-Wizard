@@ -72,11 +72,12 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	assertContains(t, bundle.Links.Clients[3].Link, "#Direct%20VLESS%20")
 	realityLink := bundle.Links.Clients[4].Link
 	assertContains(t, realityLink, "vless://33333333-3333-3333-3333-333333333333@reality.example.com:2083")
-	assertContains(t, realityLink, "?type=xhttp&security=reality&encryption=none")
+	assertContains(t, realityLink, "?type=tcp&security=reality&encryption=none&flow=xtls-rprx-vision")
 	assertContains(t, realityLink, "pbk=reality-public")
 	assertContains(t, realityLink, "sid=a1b2c3d4")
 	assertContains(t, realityLink, "sni=apple.com")
-	assertContains(t, realityLink, "#Reality%20XHTTP%20")
+	assertContains(t, realityLink, "spx=%2F")
+	assertContains(t, realityLink, "#Reality%20TCP%20Vision%20")
 	shadowsocksLink := bundle.Links.Clients[5].Link
 	assertContains(t, shadowsocksLink, "ss://")
 	assertContains(t, shadowsocksLink, "@ss.example.com:8388?type=tcp#Shadowsocks%20")
@@ -103,9 +104,11 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	assertContains(t, torDirectLink, "#Direct%20VLESS%20Tor%20")
 	torRealityLink := bundle.Links.Clients[10].Link
 	assertContains(t, torRealityLink, "vless://88888888-8888-8888-8888-888888888888@tor-reality.example.com:2101")
+	assertContains(t, torRealityLink, "?type=tcp&security=reality&encryption=none&flow=xtls-rprx-vision")
 	assertContains(t, torRealityLink, "pbk=tor-reality-public")
 	assertContains(t, torRealityLink, "sni=apple.com")
-	assertContains(t, torRealityLink, "#Reality%20XHTTP%20Tor%20")
+	assertContains(t, torRealityLink, "spx=%2F")
+	assertContains(t, torRealityLink, "#Reality%20TCP%20Vision%20Tor%20")
 	torShadowsocksLink := bundle.Links.Clients[11].Link
 	assertContains(t, torShadowsocksLink, "@tor-ss.example.com:8390?type=tcp#Shadowsocks%20Tor%20")
 	encodedTorSS := strings.TrimPrefix(strings.Split(torShadowsocksLink, "@")[0], "ss://")
@@ -168,7 +171,7 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 		t.Fatalf("unexpected hysteria2 quic params: %+v", quicParams)
 	}
 
-	reality := inboundByTag(t, bundle.Inbounds, "wdns-reality-xhttp")
+	reality := inboundByTag(t, bundle.Inbounds, "wdns-reality-tcp-vision")
 	if reality.Protocol != "vless" || reality.Port != 2083 {
 		t.Fatalf("unexpected reality inbound: %+v", reality)
 	}
@@ -178,9 +181,21 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	if _, hasEncryption := reality.Settings["encryption"]; hasEncryption {
 		t.Fatalf("reality settings should not include unmatched VLESS encryption: %+v", reality.Settings)
 	}
+	realityClients, ok := reality.Settings["clients"].([]map[string]any)
+	if !ok || len(realityClients) != 1 {
+		t.Fatalf("reality should use settings.clients: %+v", reality.Settings)
+	}
+	if realityClients[0]["flow"] != realityVisionFlow {
+		t.Fatalf("reality client flow = %q, want %s", realityClients[0]["flow"], realityVisionFlow)
+	}
 	stream := reality.StreamSettings
-	if stream["network"] != "xhttp" || stream["security"] != "reality" {
+	if stream["network"] != "tcp" || stream["security"] != "reality" {
 		t.Fatalf("unexpected reality stream settings: %+v", stream)
+	}
+	tcpSettings, _ := stream["tcpSettings"].(map[string]any)
+	header, _ := tcpSettings["header"].(map[string]any)
+	if header["type"] != "none" {
+		t.Fatalf("unexpected reality tcp settings: %+v", tcpSettings)
 	}
 	realitySettings, _ := stream["realitySettings"].(map[string]any)
 	if realitySettings["target"] != "apple.com:443" || realitySettings["privateKey"] != "reality-private" {
@@ -189,13 +204,12 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	if got := fmt.Sprint(realitySettings["serverNames"]); got != "[apple.com]" {
 		t.Fatalf("unexpected reality serverNames: %+v", realitySettings)
 	}
-	xhttpSettings, _ := stream["xhttpSettings"].(map[string]any)
-	if xhttpSettings["path"] != "/" || xhttpSettings["mode"] != "auto" {
-		t.Fatalf("unexpected xhttp settings: %+v", xhttpSettings)
+	if _, hasXHTTP := stream["xhttpSettings"]; hasXHTTP {
+		t.Fatalf("reality tcp vision should not include xhttp settings: %+v", stream)
 	}
 	realitySockopt, _ := stream["sockopt"].(map[string]any)
 	if got := fmt.Sprint(realitySockopt["trustedXForwardedFor"]); got != "[WhiteDNS-No-Trusted-XFF]" {
-		t.Fatalf("reality xhttp should explicitly disable trustedXForwardedFor: %+v", stream)
+		t.Fatalf("reality tcp vision should explicitly disable trustedXForwardedFor: %+v", stream)
 	}
 
 	shadowsocks := inboundByTag(t, bundle.Inbounds, "wdns-shadowsocks")
@@ -245,13 +259,20 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 		t.Fatalf("unexpected tor hysteria auth: %+v", torHysteriaSettings)
 	}
 
-	torReality := inboundByTag(t, bundle.Inbounds, "wdns-tor-reality-xhttp")
+	torReality := inboundByTag(t, bundle.Inbounds, "wdns-tor-reality-tcp-vision")
+	torRealityClients, ok := torReality.Settings["clients"].([]map[string]any)
+	if !ok || len(torRealityClients) != 1 || torRealityClients[0]["flow"] != realityVisionFlow {
+		t.Fatalf("unexpected tor reality clients: %+v", torReality.Settings)
+	}
 	torRealitySettings, _ := torReality.StreamSettings["realitySettings"].(map[string]any)
 	if torRealitySettings["privateKey"] != "tor-reality-private" {
 		t.Fatalf("unexpected tor reality settings: %+v", torRealitySettings)
 	}
 	if torRealitySettings["target"] != "apple.com:443" {
 		t.Fatalf("unexpected tor reality target: %+v", torRealitySettings)
+	}
+	if torReality.StreamSettings["network"] != "tcp" {
+		t.Fatalf("unexpected tor reality transport: %+v", torReality.StreamSettings)
 	}
 
 	torShadowsocks := inboundByTag(t, bundle.Inbounds, "wdns-tor-shadowsocks")
@@ -260,6 +281,17 @@ func TestBuildProtocolBundleCreatesTwelveClientLinks(t *testing.T) {
 	}
 	if torShadowsocks.Settings["password"] != "tor-ss-server-secret" {
 		t.Fatalf("unexpected tor shadowsocks settings: %+v", torShadowsocks.Settings)
+	}
+
+	for _, tag := range []string{"wdns-vless-ws", "wdns-vless-ws-8443", "wdns-direct-vless", "wdns-tor-vless-ws", "wdns-tor-vless-ws-8443", "wdns-tor-direct-vless"} {
+		inbound := inboundByTag(t, bundle.Inbounds, tag)
+		clients, ok := inbound.Settings["clients"].([]map[string]any)
+		if !ok || len(clients) == 0 {
+			t.Fatalf("expected vless clients for %s: %+v", tag, inbound.Settings)
+		}
+		if clients[0]["flow"] != "" {
+			t.Fatalf("%s flow = %q, want empty", tag, clients[0]["flow"])
+		}
 	}
 }
 

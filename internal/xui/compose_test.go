@@ -96,8 +96,8 @@ func TestPrepareManagedDocker3XUICreatesWritableBaseAndTorDirs(t *testing.T) {
 	}
 	assertContains(t, remote.commands[0], "sh -lc ")
 	script := prepareManagedDocker3XUIScript()
-	assertContains(t, script, "base='/opt/wdns-wizard/3x-ui'")
-	assertContains(t, script, "tor_dir='/opt/wdns-wizard/3x-ui/tor'")
+	assertContains(t, script, "base='/var/lib/whitedns/3x-ui'")
+	assertContains(t, script, "tor_dir='/var/lib/whitedns/3x-ui/tor'")
 	assertContains(t, script, "mkdir -p \"$base\" \"$tor_dir\"")
 	assertContains(t, script, "remote managed directory is not writable: $base")
 	assertContains(t, script, "remote managed tor directory is not writable: $tor_dir")
@@ -106,7 +106,7 @@ func TestPrepareManagedDocker3XUICreatesWritableBaseAndTorDirs(t *testing.T) {
 func TestPrepareManagedDocker3XUIReturnsClearWritableError(t *testing.T) {
 	remote := &fakeRemote{
 		failOnce: map[string]error{
-			"mkdir -p \"$base\" \"$tor_dir\"": fmt.Errorf("remote command failed: remote managed directory is not writable: /opt/wdns-wizard/3x-ui"),
+			"mkdir -p \"$base\" \"$tor_dir\"": fmt.Errorf("remote command failed: remote managed directory is not writable: /var/lib/whitedns/3x-ui"),
 		},
 	}
 	err := PrepareManagedDocker3XUI(context.Background(), remote)
@@ -114,7 +114,7 @@ func TestPrepareManagedDocker3XUIReturnsClearWritableError(t *testing.T) {
 		t.Fatal("expected prepare error")
 	}
 	assertContains(t, err.Error(), "prepare managed 3x-ui remote directory")
-	assertContains(t, err.Error(), "remote managed directory is not writable: /opt/wdns-wizard/3x-ui")
+	assertContains(t, err.Error(), "remote managed directory is not writable: /var/lib/whitedns/3x-ui")
 }
 
 func TestInstallDocker3XUIInstallsComposePluginWhenMissing(t *testing.T) {

@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	RemoteBaseDir           = "/opt/wdns-wizard/3x-ui"
+	// TODO(Pedi): Keep this legacy path only for backward compatibility with early WhiteDNS installs.
+	// Remove the /opt migration path in a near-future release after users have had time to migrate.
+	OldRemoteBaseDir        = "/opt/wdns-wizard/3x-ui"
+	RemoteBaseDir           = "/var/lib/whitedns/3x-ui"
 	RemoteComposePath       = RemoteBaseDir + "/docker-compose.yml"
 	RemoteTorDockerfilePath = RemoteBaseDir + "/tor/Dockerfile"
 	RemoteTorrcPath         = RemoteBaseDir + "/tor/torrc"
@@ -30,6 +33,7 @@ const (
 	PanelPort = 2053
 
 	noTrustedXFFSentinel = "WhiteDNS-No-Trusted-XFF"
+	realityVisionFlow    = "xtls-rprx-vision"
 )
 
 type ProtocolBundle struct {
@@ -167,18 +171,18 @@ func inboundAndLink(proto types.Protocol, values map[string]string) (Inbound, ty
 			"sockopt":     map[string]any{},
 		}
 		return inbound, link(proto, directVLESSLink(proto, uuid)), nil
-	case "reality_xhttp_direct":
+	case "reality_tcp_vision_direct":
 		uuid := required(values, "reality_vless_uuid")
 		publicKey := required(values, "reality_public_key")
 		shortID := required(values, "reality_short_id")
 		sni := realitySNI(values, "reality")
 		inbound := baseInbound(proto, "vless")
 		inbound.Settings = map[string]any{
-			"clients":    []map[string]any{vlessClient(uuid, proto.ClientEmail, DisplayNameForTag(proto.Tag))},
+			"clients":    []map[string]any{vlessVisionClient(uuid, proto.ClientEmail, DisplayNameForTag(proto.Tag))},
 			"decryption": "none",
 			"fallbacks":  []any{},
 		}
-		inbound.StreamSettings = realityXHTTPStream(values, "reality")
+		inbound.StreamSettings = realityTCPVisionStream(values, "reality")
 		inbound.Sniffing = map[string]any{"enabled": false}
 		return inbound, link(proto, realityVLESSLink(proto, uuid, publicKey, shortID, sni)), nil
 	case "shadowsocks_direct":
@@ -270,18 +274,18 @@ func inboundAndLink(proto types.Protocol, values map[string]string) (Inbound, ty
 			"sockopt":     map[string]any{},
 		}
 		return inbound, link(proto, directVLESSLink(proto, uuid)), nil
-	case "tor_reality_xhttp_direct":
+	case "tor_reality_tcp_vision_direct":
 		uuid := required(values, "tor_reality_vless_uuid")
 		publicKey := required(values, "tor_reality_public_key")
 		shortID := required(values, "tor_reality_short_id")
 		sni := realitySNI(values, "tor_reality")
 		inbound := baseInbound(proto, "vless")
 		inbound.Settings = map[string]any{
-			"clients":    []map[string]any{vlessClient(uuid, proto.ClientEmail, DisplayNameForTag(proto.Tag))},
+			"clients":    []map[string]any{vlessVisionClient(uuid, proto.ClientEmail, DisplayNameForTag(proto.Tag))},
 			"decryption": "none",
 			"fallbacks":  []any{},
 		}
-		inbound.StreamSettings = realityXHTTPStream(values, "tor_reality")
+		inbound.StreamSettings = realityTCPVisionStream(values, "tor_reality")
 		inbound.Sniffing = map[string]any{"enabled": false}
 		return inbound, link(proto, realityVLESSLink(proto, uuid, publicKey, shortID, sni)), nil
 	case "tor_shadowsocks_direct":
@@ -346,6 +350,12 @@ func vlessClient(uuid, email, comment string) map[string]any {
 		"comment":    comment,
 		"reset":      0,
 	}
+}
+
+func vlessVisionClient(uuid, email, comment string) map[string]any {
+	client := vlessClient(uuid, email, comment)
+	client["flow"] = realityVisionFlow
+	return client
 }
 
 func hysteriaClient(auth, email, comment string) map[string]any {
@@ -427,39 +437,15 @@ func tlsSettingsWithALPN(serverName, certPath, keyPath string, alpn []string) ma
 	}
 }
 
-func realityXHTTPStream(values map[string]string, prefix string) map[string]any {
+func realityTCPVisionStream(values map[string]string, prefix string) map[string]any {
 	sni := realitySNI(values, prefix)
 	return map[string]any{
-		"network": "xhttp",
-		"xhttpSettings": map[string]any{
-			"path":                 "/",
-			"host":                 "",
-			"mode":                 "auto",
-			"xPaddingBytes":        "100-1000",
-			"xPaddingObfsMode":     false,
-			"xPaddingKey":          "",
-			"xPaddingHeader":       "",
-			"xPaddingPlacement":    "",
-			"xPaddingMethod":       "",
-			"sessionPlacement":     "",
-			"sessionKey":           "",
-			"seqPlacement":         "",
-			"seqKey":               "",
-			"uplinkDataPlacement":  "",
-			"uplinkDataKey":        "",
-			"scMaxEachPostBytes":   "1000000",
-			"noSSEHeader":          false,
-			"scMaxBufferedPosts":   30,
-			"scStreamUpServerSecs": "20-80",
-			"serverMaxHeaderBytes": 0,
-			"uplinkHTTPMethod":     "",
-			"headers":              map[string]any{},
-			"scMinPostsIntervalMs": "30",
-			"uplinkChunkSize":      0,
-			"noGRPCHeader":         false,
-			"enableXmux":           false,
-		},
+		"network":  "tcp",
 		"security": "reality",
+		"tcpSettings": map[string]any{
+			"acceptProxyProtocol": false,
+			"header":              map[string]any{"type": "none"},
+		},
 		"sockopt": map[string]any{
 			"trustedXForwardedFor": []string{noTrustedXFFSentinel},
 		},
@@ -537,14 +523,15 @@ func directVLESSLink(proto types.Protocol, uuid string) string {
 
 func realityVLESSLink(proto types.Protocol, uuid, publicKey, shortID, sni string) string {
 	q := orderedQuery(
-		queryParam{"type", "xhttp"},
+		queryParam{"type", "tcp"},
 		queryParam{"security", "reality"},
 		queryParam{"encryption", "none"},
+		queryParam{"flow", realityVisionFlow},
 		queryParam{"sni", sni},
 		queryParam{"fp", "chrome"},
 		queryParam{"pbk", publicKey},
 		queryParam{"sid", shortID},
-		queryParam{"path", "/"},
+		queryParam{"spx", "/"},
 	)
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, proto.Hostname, proto.Port, q, fragmentEscape(clientRemarkForTag(proto.Tag)))
 }
@@ -565,8 +552,10 @@ func clientRemarkForTag(tag string) string {
 		return "Hysteria2 @whiteDNS"
 	case "wdns-direct-vless":
 		return "Direct VLESS @whiteDNS"
+	case "wdns-reality-tcp-vision":
+		return "Reality TCP Vision @whiteDNS"
 	case "wdns-reality-xhttp":
-		return "Reality XHTTP @whiteDNS"
+		return "Reality XHTTP Legacy @whiteDNS"
 	case "wdns-shadowsocks":
 		return "Shadowsocks @whiteDNS"
 	case "wdns-tor-vless-ws":
@@ -577,8 +566,10 @@ func clientRemarkForTag(tag string) string {
 		return "Hysteria2 Tor @whiteDNS"
 	case "wdns-tor-direct-vless":
 		return "Direct VLESS Tor @whiteDNS"
+	case "wdns-tor-reality-tcp-vision":
+		return "Reality TCP Vision Tor @whiteDNS"
 	case "wdns-tor-reality-xhttp":
-		return "Reality XHTTP Tor @whiteDNS"
+		return "Reality XHTTP Tor Legacy @whiteDNS"
 	case "wdns-tor-shadowsocks":
 		return "Shadowsocks Tor @whiteDNS"
 	default:
@@ -600,8 +591,10 @@ func DisplayNameForTag(tag string) string {
 		return "Hysteria2 @whiteDNS"
 	case "wdns-direct-vless":
 		return "Direct VLESS @whiteDNS"
+	case "wdns-reality-tcp-vision":
+		return "Reality TCP Vision @whiteDNS"
 	case "wdns-reality-xhttp":
-		return "Reality XHTTP @whiteDNS"
+		return "Reality XHTTP Legacy @whiteDNS"
 	case "wdns-shadowsocks":
 		return "Shadowsocks @whiteDNS"
 	case "wdns-tor-vless-ws":
@@ -612,8 +605,10 @@ func DisplayNameForTag(tag string) string {
 		return "Hysteria2 Tor @whiteDNS"
 	case "wdns-tor-direct-vless":
 		return "Direct VLESS Tor @whiteDNS"
+	case "wdns-tor-reality-tcp-vision":
+		return "Reality TCP Vision Tor @whiteDNS"
 	case "wdns-tor-reality-xhttp":
-		return "Reality XHTTP Tor @whiteDNS"
+		return "Reality XHTTP Tor Legacy @whiteDNS"
 	case "wdns-tor-shadowsocks":
 		return "Shadowsocks Tor @whiteDNS"
 	case "wdns-direct":

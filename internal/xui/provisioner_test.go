@@ -1,17 +1,21 @@
 package xui
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/whitedns/wdns-wizard/internal/acme"
+	"github.com/whitedns/wdns-wizard/internal/credentials"
 	"github.com/whitedns/wdns-wizard/internal/output"
 )
 
@@ -45,6 +49,94 @@ func TestPublicACMEUsesWildcardRequestAndCoversManagedTLSHosts(t *testing.T) {
 	}
 }
 
+func TestEnsureCertificatesSkipsPreflightAndIssuerForFreshPublicCert(t *testing.T) {
+	root := t.TempDir()
+	paths := output.Paths(root, "example.com")
+	writeRequiredOriginFiles(t, paths)
+	writeSelfSignedWildcardCert(t, paths.PublicCert, paths.PublicKey, "*.example.com")
+	project := projectData{Root: root, Domain: "example.com", Paths: paths}
+	preflight := &recordingACMEPreflight{}
+	issuer := &recordingIssuer{}
+
+	err := (Provisioner{ACMEPreflight: preflight, Issuer: issuer}).ensureCertificates(context.Background(), project, Input{}, newProgressRecorder(nil))
+	if err != nil {
+		t.Fatalf("ensureCertificates returned error: %v", err)
+	}
+	if preflight.called {
+		t.Fatal("preflight should not run for a fresh public certificate")
+	}
+	if issuer.called {
+		t.Fatal("issuer should not run for a fresh public certificate")
+	}
+}
+
+func TestEnsureCertificatesRunsPreflightBeforeIssuer(t *testing.T) {
+	root := t.TempDir()
+	paths := output.Paths(root, "example.com")
+	writeRequiredOriginFiles(t, paths)
+	saveTestCredentials(t, root)
+	project := projectData{Root: root, Domain: "example.com", Paths: paths}
+	preflight := &recordingACMEPreflight{}
+	issuer := &recordingIssuer{}
+
+	err := (Provisioner{ACMEPreflight: preflight, Issuer: issuer}).ensureCertificates(context.Background(), project, Input{}, newProgressRecorder(nil))
+	if err != nil {
+		t.Fatalf("ensureCertificates returned error: %v", err)
+	}
+	if !preflight.called || preflight.domain != "example.com" {
+		t.Fatalf("preflight called/domain = %t/%q, want true/example.com", preflight.called, preflight.domain)
+	}
+	if !issuer.called {
+		t.Fatal("issuer should run after successful preflight")
+	}
+}
+
+func TestEnsureCertificatesStopsWhenPreflightFails(t *testing.T) {
+	root := t.TempDir()
+	paths := output.Paths(root, "example.com")
+	writeRequiredOriginFiles(t, paths)
+	saveTestCredentials(t, root)
+	project := projectData{Root: root, Domain: "example.com", Paths: paths}
+	preflight := &recordingACMEPreflight{err: acme.PreflightError{
+		Kind:   acme.PreflightKindDNS,
+		Domain: "example.com",
+		Detail: "SOA _acme-challenge.example.com. @1.1.1.1:53 returned REFUSED",
+	}}
+	issuer := &recordingIssuer{}
+
+	err := (Provisioner{ACMEPreflight: preflight, Issuer: issuer}).ensureCertificates(context.Background(), project, Input{}, newProgressRecorder(nil))
+	if !acme.IsZoneOrDNSPreflightError(err) {
+		t.Fatalf("error = %T %[1]v, want ACME DNS preflight error", err)
+	}
+	if issuer.called {
+		t.Fatal("issuer should not run when preflight fails")
+	}
+}
+
+type recordingACMEPreflight struct {
+	called bool
+	domain string
+	err    error
+}
+
+func (r *recordingACMEPreflight) Check(ctx context.Context, input acme.PreflightInput) error {
+	r.called = true
+	r.domain = input.Domain
+	return r.err
+}
+
+type recordingIssuer struct {
+	called bool
+}
+
+func (r *recordingIssuer) Obtain(ctx context.Context, input acme.Input) (acme.Certificate, error) {
+	r.called = true
+	if len(input.Domains) == 0 {
+		return acme.Certificate{}, errors.New("domains missing")
+	}
+	return acme.Certificate{CertPEM: "public-cert", KeyPEM: "public-key"}, nil
+}
+
 func writeSelfSignedWildcardCert(t *testing.T, certPath, keyPath, hostname string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -66,6 +158,28 @@ func writeSelfSignedWildcardCert(t *testing.T, certPath, keyPath, hostname strin
 	}
 	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
 		t.Fatalf("write key: %v", err)
+	}
+}
+
+func writeRequiredOriginFiles(t *testing.T, paths output.ProjectPaths) {
+	t.Helper()
+	for _, dir := range []string{filepath.Dir(paths.OriginCert), filepath.Dir(paths.PublicCert)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("create %s: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(paths.OriginCert, []byte("origin-cert"), 0o644); err != nil {
+		t.Fatalf("write origin cert: %v", err)
+	}
+	if err := os.WriteFile(paths.OriginKey, []byte("origin-key"), 0o600); err != nil {
+		t.Fatalf("write origin key: %v", err)
+	}
+}
+
+func saveTestCredentials(t *testing.T, root string) {
+	t.Helper()
+	if err := credentials.Save(root, credentials.CloudflareCredentials{AccountID: "account-id", APIToken: "token"}); err != nil {
+		t.Fatalf("save credentials: %v", err)
 	}
 }
 
