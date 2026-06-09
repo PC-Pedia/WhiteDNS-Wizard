@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 )
@@ -25,6 +25,27 @@ type apiMessage struct {
 	Success bool            `json:"success"`
 	Msg     string          `json:"msg"`
 	Obj     json.RawMessage `json:"obj"`
+}
+
+type httpStatusError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
+}
+
+var xrayConfigReadEndpoints = []string{
+	"panel/api/xray/",
+	"panel/xray/",
+}
+
+var xrayConfigUpdateEndpoints = []string{
+	"panel/api/xray/update",
+	"panel/xray/update",
 }
 
 func NewAPIClient(baseURL, basePath string) (*APIClient, error) {
@@ -92,19 +113,42 @@ func (c *APIClient) RestartXray(ctx context.Context) error {
 }
 
 func (c *APIClient) GetXrayConfig(ctx context.Context) (map[string]any, string, error) {
-	var raw string
-	if _, err := c.doForm(ctx, "panel/xray/", nil, &raw); err != nil {
+	var raw json.RawMessage
+	if err := c.doFormWithFallback(ctx, xrayConfigReadEndpoints, nil, &raw); err != nil {
 		return nil, "", err
+	}
+	return parseXrayConfig(raw)
+}
+
+func parseXrayConfig(raw json.RawMessage) (map[string]any, string, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, "", fmt.Errorf("parse xray setting wrapper: empty response")
+	}
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return nil, "", fmt.Errorf("parse xray setting wrapper: %w", err)
+		}
+		raw = []byte(encoded)
 	}
 	var wrapper struct {
 		XraySetting     json.RawMessage `json:"xraySetting"`
 		OutboundTestURL string          `json:"outboundTestUrl"`
 	}
-	if err := json.Unmarshal([]byte(raw), &wrapper); err != nil {
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
 		return nil, "", fmt.Errorf("parse xray setting wrapper: %w", err)
 	}
 	var config map[string]any
-	if err := json.Unmarshal(wrapper.XraySetting, &config); err != nil {
+	xraySetting := bytes.TrimSpace(wrapper.XraySetting)
+	if len(xraySetting) > 0 && xraySetting[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(xraySetting, &encoded); err != nil {
+			return nil, "", fmt.Errorf("parse xray setting: %w", err)
+		}
+		xraySetting = []byte(encoded)
+	}
+	if err := json.Unmarshal(xraySetting, &config); err != nil {
 		return nil, "", fmt.Errorf("parse xray setting: %w", err)
 	}
 	return config, wrapper.OutboundTestURL, nil
@@ -121,8 +165,7 @@ func (c *APIClient) UpdateXrayConfig(ctx context.Context, config map[string]any,
 	values := url.Values{}
 	values.Set("xraySetting", string(data))
 	values.Set("outboundTestUrl", outboundTestURL)
-	_, err = c.doForm(ctx, "panel/xray/update", values, nil)
-	return err
+	return c.doFormWithFallback(ctx, xrayConfigUpdateEndpoints, values, nil)
 }
 
 func (c *APIClient) refreshCSRF(ctx context.Context, endpoint string) error {
@@ -171,6 +214,28 @@ func (c *APIClient) doForm(ctx context.Context, endpoint string, values url.Valu
 	return c.send(req, target)
 }
 
+func (c *APIClient) doFormWithFallback(ctx context.Context, endpoints []string, values url.Values, target any) error {
+	for i, endpoint := range endpoints {
+		_, err := c.doForm(ctx, endpoint, values, target)
+		if err == nil {
+			return nil
+		}
+		if i < len(endpoints)-1 && isMissingRouteError(err) {
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+func isMissingRouteError(err error) bool {
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusMethodNotAllowed
+}
+
 func (c *APIClient) send(req *http.Request, target any) (apiMessage, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -182,7 +247,12 @@ func (c *APIClient) send(req *http.Request, target any) (apiMessage, error) {
 		return apiMessage{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return apiMessage{}, fmt.Errorf("%s %s returned %d: %s", req.Method, req.URL.Path, resp.StatusCode, strings.TrimSpace(string(data)))
+		return apiMessage{}, &httpStatusError{
+			Method:     req.Method,
+			Path:       req.URL.Path,
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(data)),
+		}
 	}
 	var msg apiMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
@@ -204,9 +274,8 @@ func (c *APIClient) send(req *http.Request, target any) (apiMessage, error) {
 
 func (c *APIClient) url(endpoint string) string {
 	endpoint = strings.TrimLeft(endpoint, "/")
-	base := c.basePath
-	if base == "/" {
-		return c.baseURL + "/" + endpoint
+	if endpoint == "" {
+		return c.baseURL + c.basePath
 	}
-	return c.baseURL + path.Join(base, endpoint)
+	return c.baseURL + c.basePath + endpoint
 }
