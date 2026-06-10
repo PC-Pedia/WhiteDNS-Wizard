@@ -536,7 +536,7 @@ func (m model) View() string {
 			"Create the token in Cloudflare:\n" +
 			"1. Manage Account > Account API Tokens > Create Token\n" +
 			"2. Choose the Edit zone DNS template\n" +
-			"3. Scope it to the target domain when possible\n" +
+			"3. Scope it to the owning Cloudflare zone when possible\n" +
 			"4. Keep DNS: Read + Edit\n" +
 			"5. Add:\n" +
 			"   - DNS & Zones / Zone: Read\n" +
@@ -552,10 +552,10 @@ func (m model) View() string {
 			hintStyle.Render("This uses the account token verify endpoint.")
 	case stepDomain:
 		body = titleStyle.Render("Domain") + "\n\n" +
-			"Enter the Cloudflare zone name.\n\n" +
+			"Enter the domain to provision.\n\n" +
 			m.domainInput.View() + "\n\n" +
 			m.inlineError() +
-			hintStyle.Render("Example: example.com")
+			hintStyle.Render("Examples: example.com or team.example.com")
 	case stepIP:
 		body = titleStyle.Render("VPS IPv4") + "\n\n" +
 			"Enter the server IPv4 address for DNS records.\n\n" +
@@ -569,10 +569,10 @@ func (m model) View() string {
 			hintStyle.Render("Use up/down and Enter, or press a number. Press b or esc to go back.")
 	case stepMenuDomain:
 		body = titleStyle.Render("Change Cloudflare domain") + "\n\n" +
-			"Enter the new Cloudflare zone name.\n\n" +
+			"Enter the new domain to provision.\n\n" +
 			m.domainInput.View() + "\n\n" +
 			m.inlineError() +
-			hintStyle.Render("Existing client IDs and passwords will be reused where possible.")
+			hintStyle.Render("Subdomains can use their parent Cloudflare zone. Existing client IDs and passwords will be reused where possible.")
 	case stepMenuIP:
 		body = titleStyle.Render("VPS IPv4") + "\n\n" +
 			"Enter the server IPv4 address for the new domain.\n\n" +
@@ -975,7 +975,7 @@ func confirmationDescription(action menuAction) string {
 	case menuRestore:
 		return "Restore will replace the managed remote stack from the latest backup and restore local project files."
 	case menuDelete:
-		return "Delete removes WhiteDNS-managed remote entries/stack only. Local project files are kept."
+		return "Delete removes WhiteDNS-managed remote entries, stack, Docker images, and build cache. Local project files are kept."
 	default:
 		return "Reset will repair/reapply the managed WhiteDNS installation and preserve local secrets."
 	}

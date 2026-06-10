@@ -310,9 +310,13 @@ func TestDeleteManagedRemovesNewAndLegacyManagedPaths(t *testing.T) {
 	if !result.RemovedManagedStack {
 		t.Fatalf("expected managed stack to be marked removed: %+v", result)
 	}
+	if !result.RemovedDockerImages || !result.PrunedBuildCache {
+		t.Fatalf("expected Docker images and build cache to be cleaned: %+v", result)
+	}
 	joined := strings.Join(remote.commands, "\n")
 	for _, want := range []string{
-		"cd '/var/lib/whitedns/3x-ui' && docker compose --profile postgres down",
+		"cd '/var/lib/whitedns/3x-ui' && docker compose --profile postgres down --rmi all --volumes --remove-orphans",
+		"docker builder prune -af",
 		"rm -rf '/var/lib/whitedns/3x-ui'",
 		"if [ -d '/opt/wdns-wizard/3x-ui' ]; then rm -rf '/opt/wdns-wizard/3x-ui'; fi",
 	} {

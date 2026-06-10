@@ -74,6 +74,18 @@ func TestRenderComposeDoesNotProfilePostgres(t *testing.T) {
 	}
 }
 
+func TestRenderTorDockerfileUsesSupportedAlpine(t *testing.T) {
+	dockerfile := RenderTorDockerfile()
+	assertContains(t, dockerfile, "FROM alpine:3.24")
+	assertContains(t, dockerfile, "RUN apk add --no-cache tor")
+	assertContains(t, dockerfile, "COPY torrc /etc/tor/torrc")
+	assertContains(t, dockerfile, "USER tor")
+	assertContains(t, dockerfile, `CMD ["tor", "-f", "/etc/tor/torrc"]`)
+	if strings.Contains(dockerfile, "alpine:3.20") {
+		t.Fatalf("tor Dockerfile should not use expired Alpine 3.20:\n%s", dockerfile)
+	}
+}
+
 func TestProgressRecorderWritesLogFile(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "logs", "xui-provision.log")
 	recorder := newProgressRecorder(nil)

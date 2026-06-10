@@ -52,7 +52,7 @@ Create an Account API token in Cloudflare:
 
 ![Choose the Edit zone DNS token template](assets/tutorial/cloudflare-edit-zone-dns-template.png)
 
-3. Scope it to the target domain when possible. Use all domains only when needed.
+3. Scope it to the owning Cloudflare zone when possible. For subdomain projects such as `team.example.com`, this may be the parent zone `example.com`. Use all domains only when needed.
 4. Keep `DNS: Read + Edit`.
 5. In `DNS & Zones`, add `Zone: Read` and `Zone Settings: Edit`.
 
@@ -186,7 +186,7 @@ The interactive menu provides:
 | `d` | Dashboard credentials and login info | Shows the public panel URL, username, password, base path, and private SSH tunnel fallback command. |
 | `c` | Change Cloudflare domain | Prompts for a new domain/VPS IP, provisions Cloudflare for the new domain, reuses saved secrets where possible, and reapplies 3x-ui. |
 | `r` | Reset installation | Replaces WhiteDNS-managed inbounds/outbounds and reapplies the managed stack while preserving local secrets and client identities. |
-| `x` | Delete installation | Removes only WhiteDNS-managed remote inbounds/outbounds and managed stack files when detected. Local project files are kept. |
+| `x` | Delete installation | Removes WhiteDNS-managed remote inbounds/outbounds, managed stack files, managed Docker images, and Docker build cache when detected. Local project files are kept. |
 
 Navigation:
 

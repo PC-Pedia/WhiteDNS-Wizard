@@ -88,6 +88,8 @@ type DeleteResult struct {
 	DeletedInbounds     int
 	RemovedOutbounds    int
 	RemovedManagedStack bool
+	RemovedDockerImages bool
+	PrunedBuildCache    bool
 	ProjectDir          string
 	Warnings            []string
 }

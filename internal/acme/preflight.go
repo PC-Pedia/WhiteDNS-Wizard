@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/whitedns/wdns-wizard/internal/cloudflare"
 	"github.com/whitedns/wdns-wizard/pkg/types"
 )
 
@@ -94,17 +95,17 @@ func (c PreflightChecker) Check(ctx context.Context, input PreflightInput) error
 	if input.ZoneChecker == nil {
 		return PreflightError{Kind: PreflightKindToken, Domain: domain, Detail: "Cloudflare zone checker is not configured"}
 	}
-	zone, err := input.ZoneChecker.GetZoneByName(ctx, domain)
+	zone, err := cloudflare.ResolveZoneForDomain(ctx, input.ZoneChecker, domain)
 	if err != nil {
 		return PreflightError{
 			Kind:   PreflightKindToken,
 			Domain: domain,
-			Detail: fmt.Sprintf("Cloudflare zone %q was not found or the token cannot access it", domain),
+			Detail: fmt.Sprintf("Cloudflare zone for %q was not found or the token cannot access it", domain),
 			Cause:  err,
 		}
 	}
 	if zone == nil {
-		return PreflightError{Kind: PreflightKindToken, Domain: domain, Detail: fmt.Sprintf("Cloudflare zone %q was not found or the token cannot access it", domain)}
+		return PreflightError{Kind: PreflightKindToken, Domain: domain, Detail: fmt.Sprintf("Cloudflare zone for %q was not found or the token cannot access it", domain)}
 	}
 	if !strings.EqualFold(strings.TrimSpace(zone.Status), "active") {
 		return PreflightError{
@@ -114,6 +115,7 @@ func (c PreflightChecker) Check(ctx context.Context, input PreflightInput) error
 			NameServers: zone.NameServers,
 		}
 	}
+	zoneName := normalizeDomain(zone.Name)
 
 	resolvers := input.Resolvers
 	if len(resolvers) == 0 {
@@ -127,10 +129,15 @@ func (c PreflightChecker) Check(ctx context.Context, input PreflightInput) error
 		name  string
 		qtype uint16
 	}{
-		{name: domain, qtype: dns.TypeNS},
-		{name: domain, qtype: dns.TypeSOA},
+		{name: zoneName, qtype: dns.TypeNS},
+		{name: zoneName, qtype: dns.TypeSOA},
 	} {
 		if err := requirePublicDNSAnswers(ctx, resolver, resolvers, check.name, check.qtype); err != nil {
+			return PreflightError{Kind: PreflightKindDNS, Domain: domain, Detail: err.Error(), Cause: err}
+		}
+	}
+	if domain != zoneName {
+		if err := requireNoDelegatedNS(ctx, resolver, resolvers, domain, zoneName); err != nil {
 			return PreflightError{Kind: PreflightKindDNS, Domain: domain, Detail: err.Error(), Cause: err}
 		}
 	}
@@ -178,6 +185,32 @@ func requirePublicDNSAnswers(ctx context.Context, resolver DNSResolver, resolver
 			details = append(details, fmt.Sprintf("%s %s @%s returned no answers", dns.TypeToString[qtype], dns.Fqdn(name), server))
 			continue
 		}
+		return nil
+	}
+	return errors.New(strings.Join(details, "; "))
+}
+
+func requireNoDelegatedNS(ctx context.Context, resolver DNSResolver, resolvers []string, domain, zoneName string) error {
+	var details []string
+	for _, server := range resolvers {
+		result, err := resolver.Lookup(ctx, server, domain, dns.TypeNS)
+		if err != nil {
+			details = append(details, fmt.Sprintf("NS %s @%s failed: %v", dns.Fqdn(domain), server, err))
+			continue
+		}
+		if result.RCode == dns.RcodeNameError {
+			return nil
+		}
+		if result.RCode != dns.RcodeSuccess {
+			details = append(details, fmt.Sprintf("NS %s @%s returned %s", dns.Fqdn(domain), server, dns.RcodeToString[result.RCode]))
+			continue
+		}
+		if result.Answers > 0 {
+			return fmt.Errorf("%s has public NS records and appears delegated outside Cloudflare zone %s; remove the delegation, make %s an active Cloudflare zone, or use a token scoped to that delegated Cloudflare zone", domain, zoneName, domain)
+		}
+		return nil
+	}
+	if len(details) == 0 {
 		return nil
 	}
 	return errors.New(strings.Join(details, "; "))

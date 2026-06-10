@@ -220,10 +220,16 @@ func (p Provisioner) DeleteManaged(ctx context.Context, input Input) (DeleteResu
 		result.Warnings = append(result.Warnings, "Could not remove 3x-ui panel entries before stack removal: "+err.Error())
 	}
 	if info.ManagedDocker3XUI {
-		if _, err := remote.Run(ctx, "cd "+shQuote(RemoteBaseDir)+" && docker compose --profile postgres down"); err != nil {
-			result.Warnings = append(result.Warnings, "Could not stop managed Docker stack: "+err.Error())
+		if _, err := remote.Run(ctx, "cd "+shQuote(RemoteBaseDir)+" && docker compose --profile postgres down --rmi all --volumes --remove-orphans"); err != nil {
+			result.Warnings = append(result.Warnings, "Could not stop managed Docker stack and remove images: "+err.Error())
 		} else {
 			result.RemovedManagedStack = true
+			result.RemovedDockerImages = true
+		}
+		if _, err := remote.Run(ctx, "docker builder prune -af"); err != nil {
+			result.Warnings = append(result.Warnings, "Could not prune Docker build cache: "+err.Error())
+		} else {
+			result.PrunedBuildCache = true
 		}
 		if _, err := remote.Run(ctx, "rm -rf "+shQuote(RemoteBaseDir)); err != nil {
 			result.Warnings = append(result.Warnings, "Could not remove managed files: "+err.Error())
@@ -782,6 +788,8 @@ func RenderDeleteResult(result DeleteResult) string {
 	fmt.Fprintf(&b, "Deleted inbounds: %d\n", result.DeletedInbounds)
 	fmt.Fprintf(&b, "Removed outbounds: %d\n", result.RemovedOutbounds)
 	fmt.Fprintf(&b, "Removed managed stack: %t\n", result.RemovedManagedStack)
+	fmt.Fprintf(&b, "Removed Docker images: %t\n", result.RemovedDockerImages)
+	fmt.Fprintf(&b, "Pruned Docker build cache: %t\n", result.PrunedBuildCache)
 	fmt.Fprintf(&b, "Local project kept: %s\n", result.ProjectDir)
 	for _, warning := range result.Warnings {
 		fmt.Fprintf(&b, "Warning: %s\n", warning)

@@ -3,6 +3,7 @@ package acme
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,11 +12,19 @@ import (
 )
 
 type fakeZoneChecker struct {
-	zone *types.Zone
-	err  error
+	zone  *types.Zone
+	zones map[string]types.Zone
+	err   error
 }
 
 func (f fakeZoneChecker) GetZoneByName(ctx context.Context, name string) (*types.Zone, error) {
+	if f.zones != nil {
+		zone, ok := f.zones[normalizeDomain(name)]
+		if !ok {
+			return nil, fmt.Errorf("zone %q not found", name)
+		}
+		return &zone, nil
+	}
 	return f.zone, f.err
 }
 
@@ -46,6 +55,47 @@ func TestPreflightCheckerPassesForActiveZoneAndPublicDNS(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Check returned error: %v", err)
+	}
+}
+
+func TestPreflightCheckerPassesForSubdomainInParentCloudflareZone(t *testing.T) {
+	resolver := fakeDNSResolver{
+		results: map[string]DNSLookupResult{
+			"1.1.1.1:53|NS|team.example.com.": {RCode: dns.RcodeSuccess, Answers: 0},
+		},
+	}
+	err := (PreflightChecker{Resolver: resolver}).Check(context.Background(), PreflightInput{
+		Domain: "team.example.com",
+		ZoneChecker: fakeZoneChecker{zones: map[string]types.Zone{
+			"example.com": {Name: "example.com", Status: "active"},
+		}},
+		Resolvers: []string{"1.1.1.1:53"},
+	})
+	if err != nil {
+		t.Fatalf("Check returned error: %v", err)
+	}
+}
+
+func TestPreflightCheckerFailsForSubdomainDelegatedAwayFromParentZone(t *testing.T) {
+	resolver := fakeDNSResolver{
+		results: map[string]DNSLookupResult{
+			"1.1.1.1:53|NS|team.example.com.": {RCode: dns.RcodeSuccess, Answers: 2},
+		},
+	}
+	err := (PreflightChecker{Resolver: resolver}).Check(context.Background(), PreflightInput{
+		Domain: "team.example.com",
+		ZoneChecker: fakeZoneChecker{zones: map[string]types.Zone{
+			"example.com": {Name: "example.com", Status: "active"},
+		}},
+		Resolvers: []string{"1.1.1.1:53"},
+	})
+	if !IsZoneOrDNSPreflightError(err) {
+		t.Fatalf("error = %T %[1]v, want DNS preflight error", err)
+	}
+	for _, want := range []string{"team.example.com has public NS records", "make team.example.com an active Cloudflare zone"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q:\n%v", want, err)
+		}
 	}
 }
 

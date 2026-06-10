@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,11 +13,15 @@ import (
 )
 
 type fakeCloudflare struct {
-	zone       types.Zone
-	records    map[string]types.DNSRecord
-	verified   bool
-	setSSL     int
-	certCreate int
+	zone          types.Zone
+	zones         map[string]types.Zone
+	records       map[string]types.DNSRecord
+	recordZoneIDs map[string]string
+	verified      bool
+	setSSL        int
+	setSSLZoneID  string
+	certCreate    int
+	originReq     types.OriginCertRequest
 }
 
 func (f *fakeCloudflare) VerifyToken(ctx context.Context) error {
@@ -25,10 +30,24 @@ func (f *fakeCloudflare) VerifyToken(ctx context.Context) error {
 }
 
 func (f *fakeCloudflare) ListZones(ctx context.Context) ([]types.Zone, error) {
+	if f.zones != nil {
+		zones := make([]types.Zone, 0, len(f.zones))
+		for _, zone := range f.zones {
+			zones = append(zones, zone)
+		}
+		return zones, nil
+	}
 	return []types.Zone{f.zone}, nil
 }
 
 func (f *fakeCloudflare) GetZoneByName(ctx context.Context, name string) (*types.Zone, error) {
+	if f.zones != nil {
+		zone, ok := f.zones[strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")]
+		if !ok {
+			return nil, fmt.Errorf("zone %q not found", name)
+		}
+		return &zone, nil
+	}
 	return &f.zone, nil
 }
 
@@ -36,6 +55,10 @@ func (f *fakeCloudflare) EnsureDNSRecord(ctx context.Context, zoneID string, rec
 	if f.records == nil {
 		f.records = map[string]types.DNSRecord{}
 	}
+	if f.recordZoneIDs == nil {
+		f.recordZoneIDs = map[string]string{}
+	}
+	f.recordZoneIDs[record.Name] = zoneID
 	existing, ok := f.records[record.Name]
 	if !ok {
 		f.records[record.Name] = record
@@ -50,11 +73,13 @@ func (f *fakeCloudflare) EnsureDNSRecord(ctx context.Context, zoneID string, rec
 
 func (f *fakeCloudflare) SetSSLModeStrict(ctx context.Context, zoneID string) error {
 	f.setSSL++
+	f.setSSLZoneID = zoneID
 	return nil
 }
 
 func (f *fakeCloudflare) CreateOriginCertificate(ctx context.Context, req types.OriginCertRequest) (*types.OriginCert, error) {
 	f.certCreate++
+	f.originReq = req
 	return &types.OriginCert{ID: "cert-id", CertificatePEM: "cert"}, nil
 }
 
@@ -103,6 +128,52 @@ func TestProvisionWritesProject(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".secrets.key")); err != nil {
 		t.Fatalf("generated secrets key missing: %v", err)
+	}
+}
+
+func TestProvisionSubdomainUsesParentCloudflareZone(t *testing.T) {
+	root := t.TempDir()
+	fake := &fakeCloudflare{
+		zones: map[string]types.Zone{
+			"example.com": {ID: "parent-zone-id", Name: "example.com", Status: "active"},
+		},
+	}
+	provisioner := Provisioner{
+		Root: root,
+		NewClient: func(token, accountID string) cloudflare.Client {
+			return fake
+		},
+	}
+
+	result, err := provisioner.Provision(context.Background(), types.ProvisionInput{
+		Token:     "token",
+		AccountID: "account-id",
+		Domain:    "team.example.com",
+		VPSIP:     "1.2.3.4",
+	})
+	if err != nil {
+		t.Fatalf("Provision returned error: %v", err)
+	}
+	if result.Zone.Name != "example.com" || result.Config.Project != "team.example.com" || result.Config.ZoneID != "parent-zone-id" {
+		t.Fatalf("unexpected zone/project config: zone=%+v config=%+v", result.Zone, result.Config)
+	}
+	if fake.setSSLZoneID != "parent-zone-id" {
+		t.Fatalf("set SSL zone ID = %q, want parent-zone-id", fake.setSSLZoneID)
+	}
+	for _, record := range result.DNSPlan.Records {
+		if !strings.HasSuffix(record.Name, ".team.example.com") {
+			t.Fatalf("record name = %q, want project subdomain suffix", record.Name)
+		}
+		if fake.recordZoneIDs[record.Name] != "parent-zone-id" {
+			t.Fatalf("record %s zone ID = %q, want parent-zone-id", record.Name, fake.recordZoneIDs[record.Name])
+		}
+	}
+	wantHostnames := []string{"team.example.com", "*.team.example.com"}
+	if strings.Join(fake.originReq.Hostnames, ",") != strings.Join(wantHostnames, ",") {
+		t.Fatalf("origin hostnames = %+v, want %+v", fake.originReq.Hostnames, wantHostnames)
+	}
+	if _, err := os.Stat(filepath.Join(root, "team.example.com", "config.yaml")); err != nil {
+		t.Fatalf("subdomain project config missing: %v", err)
 	}
 }
 

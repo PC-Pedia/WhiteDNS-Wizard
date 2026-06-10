@@ -94,7 +94,7 @@ func (p Provisioner) Provision(ctx context.Context, input types.ProvisionInput) 
 	if err := credentials.Save(root, credentials.CloudflareCredentials{AccountID: accountID, APIToken: token}); err != nil {
 		return types.ProvisionResult{}, err
 	}
-	zone, err := cf.GetZoneByName(ctx, domain)
+	zone, err := cloudflare.ResolveZoneForDomain(ctx, cf, domain)
 	if err != nil {
 		return types.ProvisionResult{}, err
 	}
@@ -221,7 +221,7 @@ func (p Provisioner) Check(ctx context.Context, token, accountID, domain string)
 		if err != nil {
 			return nil, nil, err
 		}
-		zone, err := cf.GetZoneByName(ctx, normalized)
+		zone, err := cloudflare.ResolveZoneForDomain(ctx, cf, normalized)
 		return zone, nil, err
 	}
 	zones, err := cf.ListZones(ctx)

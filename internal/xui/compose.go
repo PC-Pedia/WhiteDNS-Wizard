@@ -63,7 +63,7 @@ func RenderCompose(postgresPassword string) string {
 }
 
 func RenderTorDockerfile() string {
-	return `FROM alpine:3.20
+	return `FROM alpine:3.24
 RUN apk add --no-cache tor && mkdir -p /var/lib/tor && chown -R tor /var/lib/tor
 COPY torrc /etc/tor/torrc
 USER tor
