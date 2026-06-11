@@ -84,6 +84,8 @@ Troubleshooting:
 | Token validation | Wrong token, wrong account ID, expired/disabled token, or incompatible token type. |
 | Zone lookup | Missing `Zone: Read` or token is not scoped to the selected domain. |
 | DNS or ACME DNS-01 | Missing `DNS: Edit`. |
+| ACME connectivity | Local network, DNS, proxy/VPN, firewall, or ISP path cannot reach Let's Encrypt. WhiteDNS retries public certificate issuance from the VPS when this happens. |
+| Nameserver delegation | The registrar/domain nameserver settings do not point to Cloudflare. This is not fixed by deleting or adding rows in the Cloudflare DNS records table. |
 | SSL mode strict | Missing `Zone Settings: Edit`. |
 | Origin CA certificate | Missing `Zone SSL & Certificates: Edit`. |
 
@@ -129,6 +131,8 @@ _acme-challenge.<domain>
 ```
 
 The app requests a wildcard certificate for `*.<domain>`, so one challenge covers the DNS-only TLS hostnames.
+
+If the local machine cannot complete the TLS connection to Let's Encrypt, WhiteDNS falls back to issuing the same DNS-01 certificate from the VPS over SSH. The fallback uses an installed `lego` binary when available, or a short-lived `goacme/lego:v4.24.0` Docker container.
 
 ## Generated Client Profiles
 
@@ -291,6 +295,8 @@ WhiteDNS communicates only with services needed for provisioning:
 - Let's Encrypt ACME: public certificate issuance for `*.<domain>`.
 - Your VPS over SSH: Docker installation, 3x-ui setup, certificates, inbounds, outbounds, diagnostics, backups, and support bundles.
 - Docker/GitHub package endpoints when installing Docker Compose plugin fallback binaries.
+
+When local ACME connectivity fails, WhiteDNS temporarily uploads the Cloudflare token to the VPS as a `0600` environment file so the VPS can complete the DNS-01 challenge. The temporary file and remote ACME working directory are removed after the attempt.
 
 WhiteDNS does not sell, share, or upload your project data to a WhiteDNS service.
 

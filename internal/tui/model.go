@@ -1085,9 +1085,9 @@ func (m model) handleProvisionError(err error) model {
 		m.step = stepDomain
 		m.domainInput.Focus()
 		if len(inactive.Zone.NameServers) > 0 {
-			m.inputError = "Zone is not active yet. Update registrar nameservers to: " + strings.Join(inactive.Zone.NameServers, ", ")
+			m.inputError = "Zone is not active yet. Update the domain nameserver settings at the registrar/domain provider to: " + strings.Join(inactive.Zone.NameServers, ", ") + ". This is not a DNS record in the Cloudflare DNS records table."
 		} else {
-			m.inputError = "Zone is not active yet. Update nameservers in your registrar, then try again."
+			m.inputError = "Zone is not active yet. Update nameservers at the registrar/domain provider, then try again. This is not a DNS record in the Cloudflare DNS records table."
 		}
 		return m
 	}
@@ -1097,6 +1097,12 @@ func (m model) handleProvisionError(err error) model {
 		m.xuiPlan.Warnings = appendWarnings(m.xuiPlan.Warnings, conflict.Warnings)
 		m.step = stepXUIConfirm
 		m.inputError = "3x-ui conflicts were found after the managed stack became available. Review the list before confirming replacement."
+		return m
+	}
+	var acmeFallback xui.ACMEFallbackError
+	if errors.As(err, &acmeFallback) {
+		m.step = stepXUIConfirm
+		m.inputError = acmeFallback.Error()
 		return m
 	}
 	var acmePreflight acme.PreflightError

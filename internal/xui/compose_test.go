@@ -10,13 +10,14 @@ import (
 )
 
 type fakeRemote struct {
-	commands  []string
-	events    []string
-	uploads   map[string][]byte
-	results   map[string]error
-	outputs   map[string]string
-	failOnce  map[string]error
-	tunnelErr error
+	commands    []string
+	events      []string
+	uploads     map[string][]byte
+	uploadPerms map[string]os.FileMode
+	results     map[string]error
+	outputs     map[string]string
+	failOnce    map[string]error
+	tunnelErr   error
 }
 
 func (r *fakeRemote) Run(ctx context.Context, command string) (string, error) {
@@ -45,8 +46,12 @@ func (r *fakeRemote) Upload(ctx context.Context, path string, data []byte, perm 
 	if r.uploads == nil {
 		r.uploads = map[string][]byte{}
 	}
+	if r.uploadPerms == nil {
+		r.uploadPerms = map[string]os.FileMode{}
+	}
 	r.events = append(r.events, "upload:"+path)
 	r.uploads[path] = data
+	r.uploadPerms[path] = perm
 	return nil
 }
 

@@ -2,6 +2,7 @@ package xui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -23,6 +24,7 @@ type ACMEPreflightChecker interface {
 type Provisioner struct {
 	RemoteFactory       RemoteFactory
 	Issuer              acme.Issuer
+	RemoteIssuer        ACMERemoteIssuer
 	ACMEPreflight       ACMEPreflightChecker
 	APIClient           func(baseURL, basePath string) (*APIClient, error)
 	RealitySNIValidator RealitySNIValidator
@@ -32,6 +34,7 @@ func NewProvisioner() Provisioner {
 	return Provisioner{
 		RemoteFactory: DialSSH,
 		Issuer:        acme.LegoIssuer{},
+		RemoteIssuer:  RemoteLegoIssuer{},
 		ACMEPreflight: acme.PreflightChecker{},
 		APIClient:     NewAPIClient,
 	}
@@ -198,7 +201,7 @@ func (p Provisioner) Apply(ctx context.Context, input Input) (Result, error) {
 		return Result{}, ConflictError{Conflicts: conflicts, Warnings: plan.Warnings}
 	}
 
-	if err := p.ensureCertificates(ctx, project, input, progress); err != nil {
+	if err := p.ensureCertificates(ctx, remote, project, input, progress); err != nil {
 		return Result{}, err
 	}
 	progress.Log("Uploading Origin CA and public ACME certificates to the VPS.")
@@ -349,7 +352,7 @@ func (p Provisioner) detectPanelConflicts(ctx context.Context, input Input, proj
 	return DetectConflicts(inbounds, xrayConfig, bundle.Inbounds), nil, nil
 }
 
-func (p Provisioner) ensureCertificates(ctx context.Context, project projectData, input Input, progress *progressRecorder) error {
+func (p Provisioner) ensureCertificates(ctx context.Context, remote Remote, project projectData, input Input, progress *progressRecorder) error {
 	progress.Log("Checking required Cloudflare Origin CA certificate files.")
 	if _, err := os.Stat(project.Paths.OriginCert); err != nil {
 		return fmt.Errorf("origin certificate is missing; run Cloudflare apply first: %w", err)
@@ -379,15 +382,49 @@ func (p Provisioner) ensureCertificates(ctx context.Context, project projectData
 	if issuer == nil {
 		issuer = acme.LegoIssuer{}
 	}
-	cert, err := issuer.Obtain(ctx, acme.Input{
+	acmeInput := acme.Input{
 		Email:           firstNonEmpty(input.ACMEEmail, "admin@"+project.Domain),
 		CloudflareToken: creds.APIToken,
 		Domains:         requestDomains,
-	})
-	if err != nil {
-		return err
 	}
-	progress.Log("ACME certificate issued; saving public certificate locally.")
+	cert, err := issuer.Obtain(ctx, acmeInput)
+	if err != nil {
+		if acme.IsAuthorizationDNSError(err) {
+			return acme.PreflightError{
+				Kind:   acme.PreflightKindDNS,
+				Domain: project.Domain,
+				Detail: "Let's Encrypt could not resolve the ACME TXT record. Update the domain nameserver settings at the registrar/domain provider to Cloudflare's assigned nameservers; this is not a DNS record in the Cloudflare DNS records table. Wait for nameserver propagation, then retry. " + oneLine(err.Error()),
+				Cause:  err,
+			}
+		}
+		var connectivity acme.ConnectivityError
+		if !errors.As(err, &connectivity) || remote == nil {
+			return err
+		}
+		progress.Logf("Local ACME request could not reach Let's Encrypt: %s", oneLine(connectivity.Error()))
+		progress.Logf("Retrying ACME certificate issuance from the VPS; this can take up to %s while Docker/lego runs DNS validation.", remoteACMEIssueTimeout)
+		remoteIssuer := p.RemoteIssuer
+		if remoteIssuer == nil {
+			remoteIssuer = RemoteLegoIssuer{}
+		}
+		remoteCtx, cancel := context.WithTimeout(ctx, remoteACMEIssueTimeout)
+		cert, err = remoteIssuer.Obtain(remoteCtx, remote, acmeInput)
+		cancel()
+		if err != nil {
+			if acme.IsAuthorizationDNSError(err) {
+				return acme.PreflightError{
+					Kind:   acme.PreflightKindDNS,
+					Domain: project.Domain,
+					Detail: "Let's Encrypt could not resolve the ACME TXT record from the VPS fallback. Update the domain nameserver settings at the registrar/domain provider to Cloudflare's assigned nameservers; this is not a DNS record in the Cloudflare DNS records table. Wait for nameserver propagation, then retry. " + oneLine(err.Error()),
+					Cause:  err,
+				}
+			}
+			return ACMEFallbackError{Local: connectivity, Remote: err}
+		}
+		progress.Log("ACME certificate issued from VPS fallback; saving public certificate locally.")
+	} else {
+		progress.Log("ACME certificate issued; saving public certificate locally.")
+	}
 	if err := os.MkdirAll(filepath.Dir(project.Paths.PublicCert), 0o755); err != nil {
 		return fmt.Errorf("create public cert directory: %w", err)
 	}

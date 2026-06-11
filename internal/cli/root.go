@@ -144,7 +144,8 @@ func newCloudflareApplyCommand(root, accountID *string) *cobra.Command {
 				if inactive, ok := err.(types.InactiveZoneError); ok {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Zone %s is not active.\n", inactive.Zone.Name)
 					if len(inactive.Zone.NameServers) > 0 {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Update registrar nameservers to: %s\n", strings.Join(inactive.Zone.NameServers, ", "))
+						fmt.Fprintf(cmd.ErrOrStderr(), "Update the domain nameserver settings at the registrar/domain provider to: %s\n", strings.Join(inactive.Zone.NameServers, ", "))
+						fmt.Fprintln(cmd.ErrOrStderr(), "This is not a DNS record in the Cloudflare DNS records table.")
 					}
 				}
 				return err

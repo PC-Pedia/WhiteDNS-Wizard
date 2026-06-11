@@ -58,6 +58,59 @@ func TestPreflightCheckerPassesForActiveZoneAndPublicDNS(t *testing.T) {
 	}
 }
 
+func TestPreflightCheckerPassesWhenPublicNSMatchesCloudflareNameservers(t *testing.T) {
+	resolver := fakeDNSResolver{
+		results: map[string]DNSLookupResult{
+			"1.1.1.1:53|NS|example.com.": {
+				RCode:   dns.RcodeSuccess,
+				Answers: 2,
+				NSNames: []string{"newt.ns.cloudflare.com.", "sofia.ns.cloudflare.com."},
+			},
+		},
+	}
+	err := (PreflightChecker{Resolver: resolver}).Check(context.Background(), PreflightInput{
+		Domain: "example.com",
+		ZoneChecker: fakeZoneChecker{zone: &types.Zone{
+			Name:        "example.com",
+			Status:      "active",
+			NameServers: []string{"newt.ns.cloudflare.com", "sofia.ns.cloudflare.com"},
+		}},
+		Resolvers: []string{"1.1.1.1:53"},
+	})
+	if err != nil {
+		t.Fatalf("Check returned error: %v", err)
+	}
+}
+
+func TestPreflightCheckerFailsWhenRegistrarNameserversDoNotPointToCloudflare(t *testing.T) {
+	resolver := fakeDNSResolver{
+		results: map[string]DNSLookupResult{
+			"1.1.1.1:53|NS|example.com.": {
+				RCode:   dns.RcodeSuccess,
+				Answers: 2,
+				NSNames: []string{"w.ns.globalcdntech.com.", "x.ns.globalcdntech.com."},
+			},
+		},
+	}
+	err := (PreflightChecker{Resolver: resolver}).Check(context.Background(), PreflightInput{
+		Domain: "example.com",
+		ZoneChecker: fakeZoneChecker{zone: &types.Zone{
+			Name:        "example.com",
+			Status:      "active",
+			NameServers: []string{"newt.ns.cloudflare.com", "sofia.ns.cloudflare.com"},
+		}},
+		Resolvers: []string{"1.1.1.1:53"},
+	})
+	if !IsZoneOrDNSPreflightError(err) {
+		t.Fatalf("error = %T %[1]v, want DNS preflight error", err)
+	}
+	for _, want := range []string{"public DNS currently delegates example.com", "w.ns.globalcdntech.com", "newt.ns.cloudflare.com", "not the Cloudflare DNS records table"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q:\n%v", want, err)
+		}
+	}
+}
+
 func TestPreflightCheckerPassesForSubdomainInParentCloudflareZone(t *testing.T) {
 	resolver := fakeDNSResolver{
 		results: map[string]DNSLookupResult{

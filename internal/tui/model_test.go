@@ -233,6 +233,26 @@ func TestACMEPreflightDNSErrorReturnsToDomainStep(t *testing.T) {
 	}
 }
 
+func TestACMEFallbackErrorReturnsToXUIConfirmStep(t *testing.T) {
+	m := newModel(app.Provisioner{Root: t.TempDir()})
+	m.step = stepXUIApplying
+
+	next, _ := m.Update(errorMsg{err: xui.ACMEFallbackError{
+		Local:  acme.ConnectivityError{Detail: "net/http: TLS handshake timeout"},
+		Remote: errors.New("run remote ACME issuance: remote command failed"),
+	}})
+	got := next.(model)
+
+	if got.step != stepXUIConfirm {
+		t.Fatalf("step = %v, want stepXUIConfirm", got.step)
+	}
+	for _, want := range []string{"VPS fallback also failed", "Press Y to retry", "remote command failed"} {
+		if !strings.Contains(got.View(), want) {
+			t.Fatalf("view missing %q:\n%s", want, got.View())
+		}
+	}
+}
+
 func TestInactiveZoneReturnsToDomainStep(t *testing.T) {
 	m := newModel(app.Provisioner{Root: t.TempDir()})
 	m.step = stepApplying

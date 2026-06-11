@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ type DNSResolver interface {
 type DNSLookupResult struct {
 	RCode   int
 	Answers int
+	NSNames []string
 }
 
 type PreflightInput struct {
@@ -62,13 +64,14 @@ func (e PreflightError) Error() string {
 	lines := []string{
 		fmt.Sprintf("ACME DNS preflight failed for %s.", domain),
 		fmt.Sprintf("WhiteDNS could not verify _acme-challenge.%s through public DNS.", domain),
-		"Check that the domain is active in Cloudflare, registrar nameservers point to Cloudflare, and the API token is scoped to this zone.",
+		"Check that the domain is active in Cloudflare, the registrar/domain nameserver settings use Cloudflare's assigned nameservers, and the API token is scoped to this zone.",
+		"This is not a DNS record to remove in the Cloudflare DNS records table.",
 	}
 	if strings.TrimSpace(e.Detail) != "" {
 		lines = append(lines, "Detail: "+strings.TrimSpace(e.Detail))
 	}
 	if len(e.NameServers) > 0 {
-		lines = append(lines, "Cloudflare nameservers: "+strings.Join(e.NameServers, ", "))
+		lines = append(lines, "Cloudflare assigned nameservers: "+strings.Join(e.NameServers, ", "))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -125,6 +128,15 @@ func (c PreflightChecker) Check(ctx context.Context, input PreflightInput) error
 	if resolver == nil {
 		resolver = DNSClientResolver{Timeout: c.Timeout}
 	}
+	if err := requireCloudflareNameservers(ctx, resolver, resolvers, zoneName, zone.NameServers); err != nil {
+		return PreflightError{
+			Kind:        PreflightKindDNS,
+			Domain:      domain,
+			Detail:      err.Error(),
+			NameServers: zone.NameServers,
+			Cause:       err,
+		}
+	}
 	for _, check := range []struct {
 		name  string
 		qtype uint16
@@ -166,7 +178,47 @@ func (r DNSClientResolver) Lookup(ctx context.Context, server, name string, qtyp
 	if resp == nil {
 		return DNSLookupResult{}, fmt.Errorf("empty DNS response")
 	}
-	return DNSLookupResult{RCode: resp.Rcode, Answers: len(resp.Answer)}, nil
+	result := DNSLookupResult{RCode: resp.Rcode, Answers: len(resp.Answer)}
+	if qtype == dns.TypeNS {
+		for _, answer := range resp.Answer {
+			if ns, ok := answer.(*dns.NS); ok {
+				result.NSNames = append(result.NSNames, normalizeDomain(ns.Ns))
+			}
+		}
+	}
+	return result, nil
+}
+
+func requireCloudflareNameservers(ctx context.Context, resolver DNSResolver, resolvers []string, zoneName string, cloudflareNameservers []string) error {
+	expected := normalizeNameserverSet(cloudflareNameservers)
+	if len(expected) == 0 {
+		return nil
+	}
+	var details []string
+	for _, server := range resolvers {
+		result, err := resolver.Lookup(ctx, server, zoneName, dns.TypeNS)
+		if err != nil {
+			details = append(details, fmt.Sprintf("NS %s @%s failed: %v", dns.Fqdn(zoneName), server, err))
+			continue
+		}
+		if result.RCode != dns.RcodeSuccess {
+			details = append(details, fmt.Sprintf("NS %s @%s returned %s", dns.Fqdn(zoneName), server, dns.RcodeToString[result.RCode]))
+			continue
+		}
+		if result.Answers == 0 {
+			details = append(details, fmt.Sprintf("NS %s @%s returned no answers", dns.Fqdn(zoneName), server))
+			continue
+		}
+		actual := normalizeNameserverSet(result.NSNames)
+		if len(actual) == 0 {
+			return nil
+		}
+		if containsAllNameservers(actual, expected) {
+			return nil
+		}
+		details = append(details, fmt.Sprintf("public DNS currently delegates %s @%s to %s, but Cloudflare assigned %s; update the domain nameserver settings at the registrar/domain provider, not the Cloudflare DNS records table", zoneName, server, strings.Join(sortedNameservers(actual), ", "), strings.Join(sortedNameservers(expected), ", ")))
+	}
+	return errors.New(strings.Join(details, "; "))
 }
 
 func requirePublicDNSAnswers(ctx context.Context, resolver DNSResolver, resolvers []string, name string, qtype uint16) error {
@@ -206,7 +258,7 @@ func requireNoDelegatedNS(ctx context.Context, resolver DNSResolver, resolvers [
 			continue
 		}
 		if result.Answers > 0 {
-			return fmt.Errorf("%s has public NS records and appears delegated outside Cloudflare zone %s; remove the delegation, make %s an active Cloudflare zone, or use a token scoped to that delegated Cloudflare zone", domain, zoneName, domain)
+			return fmt.Errorf("%s has public NS records and appears delegated outside Cloudflare zone %s; update that nameserver delegation at the DNS/registrar provider, make %s an active Cloudflare zone, or use a token scoped to that delegated Cloudflare zone", domain, zoneName, domain)
 		}
 		return nil
 	}
@@ -230,6 +282,35 @@ func requireChallengeSOAReachable(ctx context.Context, resolver DNSResolver, res
 		details = append(details, fmt.Sprintf("SOA %s @%s returned %s", dns.Fqdn(name), server, dns.RcodeToString[result.RCode]))
 	}
 	return errors.New(strings.Join(details, "; "))
+}
+
+func normalizeNameserverSet(values []string) map[string]bool {
+	out := map[string]bool{}
+	for _, value := range values {
+		value = normalizeDomain(value)
+		if value != "" {
+			out[value] = true
+		}
+	}
+	return out
+}
+
+func containsAllNameservers(actual, expected map[string]bool) bool {
+	for ns := range expected {
+		if !actual[ns] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedNameservers(values map[string]bool) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func normalizeDomain(domain string) string {
